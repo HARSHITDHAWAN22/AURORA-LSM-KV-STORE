@@ -1,0 +1,22 @@
+{
+    
+  "storage":{
+    "memtable": {
+      "max_entries": 5000
+    },
+    
+    "sstable": {
+      "data_directory": "data/sstables"
+    }
+  },
+
+  "bloom_filter":{
+    "bit_size": 10000,
+    "hash_functions": 3
+  },
+
+  "compaction":{
+    "strategy": "level",
+    "max_files_per_level": 4
+  }
+}
