@@ -3,6 +3,7 @@
 
 #include<string>
 #include "ConfigManager.h"
+#include "MemTable.h"
 
 class KVStore{
 public:
@@ -14,13 +15,10 @@ public:
     void deleteKey(const std::string& key);
 
 private:
+
     ConfigManager configManager;
+    MemTable memTable;
 
-    // Future components (placeholders)
-    // MemTable* memTable;
-    // Compaction* compaction;
 };
-
 /*Also: putting using namespace std; in a header file forces every file that includes it to import the entire std namespace, which can cause name conflicts and unexpected errors in large projects. */
-
 #endif

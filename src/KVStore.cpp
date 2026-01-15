@@ -1,25 +1,39 @@
-#ifndef KV_STORE_H
-#define KV_STORE_H
+#include "KVStore.h"
+#include<iostream>
 
-#include <string>
-#include "ConfigManager.h"
+KVStore::KVStore(const std::string& configPath)
+    : configManager(configPath),
+      memTable(0)   // temporary init
 
-class KVStore{
-public:
-    explicit KVStore(const std::string& configPath);
+{
 
-    // Core operations
-    void put(const std::string& key, const std::string& value);
-    bool get(const std::string& key, std::string& value);
-    void deleteKey(const std::string& key);
+    if(!configManager.load()){
+        std::cerr<< "Failed to load configuration." << std::endl;
+        return;
+    }
 
+
+    // Reinitialize MemTable with config value
+    memTable = MemTable(configManager.getMemTableMaxEntries());
+
+}
+
+void KVStore::put(const std::string& key, const std::string& value){
+    memTable.put(key, value);
+
+    if(memTable.isFull()){
+        std::cout << "MemTable full. Flush to disk will be implemented next.\n";
+        memTable.clear();
+
+    }
+}
+
+bool KVStore::get(const std::string& key, std::string& value){
+
+    return memTable.get(key, value);
+}
+
+void KVStore::deleteKey(const std::string& key){
     
-private:
-    ConfigManager configManager;
-
-    // Future components (placeholders)
-    // MemTable* memTable;
-    // Compaction* compaction;
-};
-
-#endif
+    memTable.remove(key);
+}
