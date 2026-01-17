@@ -7,6 +7,7 @@
 #include "ConfigManager.h"
 #include "MemTable.h"
 #include "SSTable.h"
+#include "Compaction.h"
 
 class KVStore{
 public:
@@ -19,6 +20,8 @@ public:
 
     private:
     void flushMemTable();
+        void runCompactionIfNeeded();
+
 
 
 private:
@@ -27,6 +30,7 @@ private:
     MemTable memTable;
 
     std::vector<SSTable> sstables;
+    Compaction compaction;
 
     int sstableCounter;
 

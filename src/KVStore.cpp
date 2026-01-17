@@ -5,28 +5,33 @@
 KVStore::KVStore(const std::string& configPath)
     : configManager(configPath),
       memTable(0),
+      compaction(
+          Compaction::Strategy::LEVEL,
+          0
+      ),
       sstableCounter(0)
 {
-    
+
     if(!configManager.load()){
-        std::cerr << "Failed to load configuration.\n";
+        std::cerr<< "Failed to load configuration.\n";
         return;
     }
 
     memTable = MemTable(configManager.getMemTableMaxEntries());
+
+    compaction = Compaction(
+        Compaction::Strategy::LEVEL,
+        configManager.getMaxFilesPerLevel()
+    );
 }
-
-
 
 void KVStore::put(const std::string& key, const std::string& value){
     memTable.put(key, value);
 
-    if (memTable.isFull()) {
+    if(memTable.isFull()){
         flushMemTable();
     }
 }
-
-
 
 bool KVStore::get(const std::string& key, std::string& value){
     if(memTable.get(key, value)){
@@ -34,16 +39,14 @@ bool KVStore::get(const std::string& key, std::string& value){
     }
 
 
-    
     for(auto it = sstables.rbegin(); it != sstables.rend(); ++it){
-        if (it->get(key, value)) {
+        if(it->get(key, value)){
             return true;
         }
     }
 
     return false;
 }
-
 
 void KVStore::deleteKey(const std::string& key){
     memTable.remove(key);
@@ -67,6 +70,10 @@ void KVStore::flushMemTable(){
     if(sstable.writeToDisk(memTable.getData())){
         sstables.push_back(sstable);
         memTable.clear();
-        std::cout << "Flushed MemTable to " << filePath << "\n";
+        runCompactionIfNeeded();
     }
+}
+
+void KVStore::runCompactionIfNeeded(){
+    compaction.run(sstables);
 }
