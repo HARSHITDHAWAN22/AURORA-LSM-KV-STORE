@@ -3,11 +3,16 @@
 
 #include<string>
 #include<map>
+#include "BloomFilter.h"
+
+// Immutable on-disk table with an attached Bloom filter
 
 class SSTable{
 public:
 
-    explicit SSTable(const std::string& filePath);
+     SSTable(const std::string& filePath,
+            size_t bloomBitSize,
+            size_t bloomHashCount);
 
     // Write sorted data to disk
     bool writeToDisk(const std::map<std::string, std::string>& data);
@@ -20,6 +25,7 @@ public:
 private:
 
     std::string filePath;
+    BloomFilter bloom;
 };
 
 #endif
