@@ -1,6 +1,7 @@
 #include "KVStore.h"
 #include <iostream>
 
+
 KVStore::KVStore(const std::string& configPath)
     : configManager(configPath),
       memTable(0),
@@ -16,13 +17,15 @@ KVStore::KVStore(const std::string& configPath)
 }
 
 
+
 void KVStore::put(const std::string& key, const std::string& value){
     memTable.put(key, value);
 
-    if(memTable.isFull()){
+    if (memTable.isFull()) {
         flushMemTable();
     }
 }
+
 
 
 bool KVStore::get(const std::string& key, std::string& value){
@@ -30,9 +33,10 @@ bool KVStore::get(const std::string& key, std::string& value){
         return true;
     }
 
+
     
     for(auto it = sstables.rbegin(); it != sstables.rend(); ++it){
-        if(it->get(key, value)){
+        if (it->get(key, value)) {
             return true;
         }
     }
@@ -40,22 +44,27 @@ bool KVStore::get(const std::string& key, std::string& value){
     return false;
 }
 
-void KVStore::deleteKey(const std::string& key) {
+
+void KVStore::deleteKey(const std::string& key){
     memTable.remove(key);
 
-    if (memTable.isFull()) {
+    if(memTable.isFull()){
         flushMemTable();
     }
 }
 
-void KVStore::flushMemTable() {
+void KVStore::flushMemTable(){
     std::string filePath =
         configManager.getSSTableDirectory() +
         "/sstable_" + std::to_string(sstableCounter++) + ".dat";
 
-    SSTable sstable(filePath);
+    SSTable sstable(
+        filePath,
+        configManager.getBloomFilterBitSize(),
+        configManager.getBloomFilterHashCount()
+    );
 
-    if (sstable.writeToDisk(memTable.getData())) {
+    if(sstable.writeToDisk(memTable.getData())){
         sstables.push_back(sstable);
         memTable.clear();
         std::cout << "Flushed MemTable to " << filePath << "\n";
