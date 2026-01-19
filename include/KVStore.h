@@ -8,6 +8,8 @@
 #include "MemTable.h"
 #include "SSTable.h"
 #include "Compaction.h"
+#include "BloomFilter.h"
+#include "ManifestManager.h"
 
 class KVStore{
 public:
@@ -21,6 +23,7 @@ public:
     private:
     void flushMemTable();
         void runCompactionIfNeeded();
+         void loadFromManifest();
 
 
 
@@ -31,6 +34,7 @@ private:
 
     std::vector<SSTable> sstables;
     Compaction compaction;
+     ManifestManager manifest;
 
     int sstableCounter;
 

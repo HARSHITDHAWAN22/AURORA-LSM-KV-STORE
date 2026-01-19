@@ -9,6 +9,7 @@ KVStore::KVStore(const std::string& configPath)
           Compaction::Strategy::LEVEL,
           0
       ),
+       manifest("metadata/manifest.txt"),
       sstableCounter(0)
 {
 
@@ -23,7 +24,25 @@ KVStore::KVStore(const std::string& configPath)
         Compaction::Strategy::LEVEL,
         configManager.getMaxFilesPerLevel()
     );
+     loadFromManifest();
 }
+
+
+void KVStore::loadFromManifest(){
+    manifest.load();
+
+    for(const auto& path : manifest.getSSTables()){ 
+        sstables.emplace_back(
+            path,
+            configManager.getBloomFilterBitSize(),
+            configManager.getBloomFilterHashCount()
+        );
+        ++sstableCounter;
+    }
+}
+
+
+
 
 void KVStore::put(const std::string& key, const std::string& value){
     memTable.put(key, value);
@@ -69,6 +88,8 @@ void KVStore::flushMemTable(){
 
     if(sstable.writeToDisk(memTable.getData())){
         sstables.push_back(sstable);
+        manifest.addSSTable(filePath);
+        manifest.save();
         memTable.clear();
         runCompactionIfNeeded();
     }
