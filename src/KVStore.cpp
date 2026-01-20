@@ -2,6 +2,8 @@
 #include <iostream>
 
 
+
+
 KVStore::KVStore(const std::string& configPath)
     : configManager(configPath),
       memTable(0),
@@ -17,6 +19,7 @@ KVStore::KVStore(const std::string& configPath)
         std::cerr<< "Failed to load configuration.\n";
         return;
     }
+
 
     memTable = MemTable(configManager.getMemTableMaxEntries());
 
