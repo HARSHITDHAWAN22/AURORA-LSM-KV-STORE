@@ -53,7 +53,7 @@ int main(int argc, char* argv[]){
         store.flush();
         std::cout << "DELETED\n";
     }
-    
+
     else if(command == "scan"){
         if(argc != 4){
             std::cerr << "scan requires <start_key> <end_key>\n";
@@ -65,6 +65,8 @@ int main(int argc, char* argv[]){
     else{
         std::cerr << "Unknown command\n";
     }
+
+    store.flush();
 
     return 0;
 }

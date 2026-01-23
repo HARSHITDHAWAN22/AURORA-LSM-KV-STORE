@@ -19,18 +19,9 @@ void ManifestManager::load(){
 }
 
 void ManifestManager::save() const{
-    // ensure directory exists
-    std::filesystem::create_directories(
-        std::filesystem::path(manifestPath).parent_path()
-    );
-
-    std::ofstream out(manifestPath);
-    if(!out.is_open()){
-        return;
-    }
-
+    std::ofstream out(manifestPath, std::ios::trunc);
     for(const auto& file : sstableFiles){
-        out << file << "\n";
+        out << file<< "\n";
     }
 }
 

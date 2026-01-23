@@ -2,6 +2,7 @@
 #include <iostream>
 #include <fstream>
 #include <unordered_set>
+#include<filesystem>
 
 KVStore::KVStore(const std::string& configPath)
     : configManager(configPath),
@@ -14,6 +15,12 @@ KVStore::KVStore(const std::string& configPath)
         std::cerr << "Failed to load configuration.\n";
         return;
     }
+
+    std::filesystem::create_directories(
+    configManager.getSSTableDirectory()
+);
+std::filesystem::create_directories("metadata");
+
 
     memTable = MemTable(configManager.getMemTableMaxEntries());
 
