@@ -36,6 +36,10 @@ void MemTable::clear(){
     table.clear();
 }
 
+bool MemTable::isEmpty() const{
+    return table.empty();
+}
+
 
 const std::map<std::string, std::string>& MemTable::getData() const{
     return table;

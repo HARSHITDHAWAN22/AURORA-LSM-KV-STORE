@@ -13,9 +13,12 @@ public:
     void remove(const std::string& key);
 
     bool isFull() const;
+     bool isEmpty() const;
     void clear();
 
     const std::map<std::string, std::string>& getData() const;
+
+   
 
 
 private:

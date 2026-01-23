@@ -1,25 +1,19 @@
 #include "KVStore.h"
 #include <iostream>
-
-
-
+#include <fstream>
+#include <unordered_set>
 
 KVStore::KVStore(const std::string& configPath)
     : configManager(configPath),
       memTable(0),
-      compaction(
-          Compaction::Strategy::LEVEL,
-          0
-      ),
-       manifest("metadata/manifest.txt"),
+      compaction(Compaction::Strategy::LEVEL, 0),
+      manifest("metadata/manifest.txt"),
       sstableCounter(0)
 {
-
     if(!configManager.load()){
-        std::cerr<< "Failed to load configuration.\n";
+        std::cerr << "Failed to load configuration.\n";
         return;
     }
-
 
     memTable = MemTable(configManager.getMemTableMaxEntries());
 
@@ -27,14 +21,14 @@ KVStore::KVStore(const std::string& configPath)
         Compaction::Strategy::LEVEL,
         configManager.getMaxFilesPerLevel()
     );
-     loadFromManifest();
-}
 
+    loadFromManifest();
+}
 
 void KVStore::loadFromManifest(){
     manifest.load();
 
-    for(const auto& path : manifest.getSSTables()){ 
+    for(const auto& path : manifest.getSSTables()){
         sstables.emplace_back(
             path,
             configManager.getBloomFilterBitSize(),
@@ -43,9 +37,6 @@ void KVStore::loadFromManifest(){
         ++sstableCounter;
     }
 }
-
-
-
 
 void KVStore::put(const std::string& key, const std::string& value){
     memTable.put(key, value);
@@ -59,7 +50,6 @@ bool KVStore::get(const std::string& key, std::string& value){
     if(memTable.get(key, value)){
         return true;
     }
-
 
     for(auto it = sstables.rbegin(); it != sstables.rend(); ++it){
         if(it->get(key, value)){
@@ -95,6 +85,43 @@ void KVStore::flushMemTable(){
         manifest.save();
         memTable.clear();
         runCompactionIfNeeded();
+    }
+}
+
+void KVStore::flush(){
+    if(!memTable.isEmpty()){
+        flushMemTable();
+    }
+}
+
+void KVStore::scan(const std::string& start, const std::string& end){
+    std::unordered_set<std::string> seen;
+
+    // 1) MemTable (newest data)
+    for(const auto& kv : memTable.getData()){
+        if(kv.first >= start && kv.first <= end){
+            std::cout << kv.first << " -> " << kv.second << "\n";
+            seen.insert(kv.first);
+        }
+    }
+
+    // 2) SSTables (newest to oldest)
+    for(auto it = sstables.rbegin(); it != sstables.rend(); ++it){
+        std::ifstream in(it->getFilePath());
+        std::string line;
+
+        while(std::getline(in, line)){
+            auto pos = line.find('\t');
+            if(pos == std::string::npos) continue;
+
+            std::string key = line.substr(0, pos);
+            std::string value = line.substr(pos + 1);
+
+            if(key >= start && key <= end && !seen.count(key)){
+                std::cout << key << " -> " << value << "\n";
+                seen.insert(key);
+            }
+        }
     }
 }
 

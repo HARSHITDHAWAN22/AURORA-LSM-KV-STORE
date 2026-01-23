@@ -1,9 +1,10 @@
 #include "ConfigManager.h"
-#include<fstream>
-#include<iostream>
-#include<nlohmann/json.hpp>
-using namespace std;
+#include <fstream>
+#include <iostream>
+#include <filesystem>
+#include <nlohmann/json.hpp>
 
+using namespace std;
 using json = nlohmann::json;
 
 ConfigManager::ConfigManager(const std::string& configPath)
@@ -15,9 +16,8 @@ ConfigManager::ConfigManager(const std::string& configPath)
 
 bool ConfigManager::load(){
     ifstream file(configFilePath);
-
     if(!file.is_open()){
-        std::cerr<<"Failed to open config file: "<< configFilePath << std::endl;
+        cerr << "Failed to open config file: " << configFilePath << endl;
         return false;
     }
 
@@ -29,6 +29,15 @@ bool ConfigManager::load(){
 
     sstableDirectory =
         config["storage"]["sstable"]["data_directory"];
+
+    if(sstableDirectory.empty()){
+        cerr << "Invalid SSTable directory in config\n";
+        return false;
+    }
+
+    
+    // ensure directory exists
+    std::filesystem::create_directories(sstableDirectory);
 
     bloomFilterBitSize =
         config["bloom_filter"]["bit_size"];
@@ -42,22 +51,22 @@ bool ConfigManager::load(){
     return true;
 }
 
-int ConfigManager::getMemTableMaxEntries() const {
+int ConfigManager::getMemTableMaxEntries() const{
     return memTableMaxEntries;
 }
 
-int ConfigManager::getBloomFilterBitSize() const {
+int ConfigManager::getBloomFilterBitSize() const{
     return bloomFilterBitSize;
 }
 
-int ConfigManager::getBloomFilterHashCount() const {
+int ConfigManager::getBloomFilterHashCount() const{
     return bloomFilterHashCount;
 }
 
-int ConfigManager::getMaxFilesPerLevel() const {
+int ConfigManager::getMaxFilesPerLevel() const{
     return maxFilesPerLevel;
 }
 
-string ConfigManager::getSSTableDirectory() const {
+string ConfigManager::getSSTableDirectory() const{
     return sstableDirectory;
 }

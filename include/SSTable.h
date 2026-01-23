@@ -9,6 +9,7 @@
 
 class SSTable{
 public:
+void loadBloom();
 
      SSTable(const std::string& filePath,
             size_t bloomBitSize,

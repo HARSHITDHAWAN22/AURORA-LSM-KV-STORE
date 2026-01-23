@@ -20,14 +20,17 @@ public:
     bool get(const std::string& key, std::string& value);
     void deleteKey(const std::string& key);
 
-    private:
-    void flushMemTable();
-        void runCompactionIfNeeded();
-         void loadFromManifest();
+    
 
+    void flush();
+void scan(const std::string& start, const std::string& end);
 
 
 private:
+void flushMemTable();
+        void runCompactionIfNeeded();
+         void loadFromManifest();
+
 
     ConfigManager configManager;
     MemTable memTable;
