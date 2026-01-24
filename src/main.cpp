@@ -89,8 +89,7 @@ int main(int argc,char* argv[]){
         std::cerr<<"Unknown command\n";
     }
 
-    // -------- FLUSH ON EXIT (CRITICAL) --------
-    store.flush();
+   
 
     return 0;
 }
