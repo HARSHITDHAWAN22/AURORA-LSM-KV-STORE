@@ -1,6 +1,6 @@
 #include "MemTable.h"
 
-
+const std::string MemTable::TOMBSTONE = "__TOMBSTONE__";
 MemTable::MemTable(int maxEntries)
     : maxEntries(maxEntries) {}
 
@@ -18,6 +18,9 @@ bool MemTable::get(const std::string& key, std::string& value) const{
         return false;
     }
     
+    if(it->second == TOMBSTONE){
+        return true;   
+    }
     value = it->second;
     return true;
 }

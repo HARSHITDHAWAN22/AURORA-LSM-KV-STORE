@@ -4,7 +4,7 @@
 #include <unordered_set>
 #include<filesystem>
 
-KVStore::KVStore(const std::string& configPath)
+KVStore::KVStore(const std::string& configPath,const std::string& strategy)
     : configManager(configPath),
       memTable(0),
       compaction(Compaction::Strategy::LEVEL, 0),
@@ -12,20 +12,19 @@ KVStore::KVStore(const std::string& configPath)
       sstableCounter(0)
 {
     if(!configManager.load()){
-        std::cerr << "Failed to load configuration.\n";
+        std::cerr<<"Failed to load configuration.\n";
         return;
     }
 
-    std::filesystem::create_directories(
-    configManager.getSSTableDirectory()
-);
-std::filesystem::create_directories("metadata");
-
-
     memTable = MemTable(configManager.getMemTableMaxEntries());
 
+    Compaction::Strategy mode =
+        (strategy=="tiering")
+        ? Compaction::Strategy::TIERED
+        : Compaction::Strategy::LEVEL;
+
     compaction = Compaction(
-        Compaction::Strategy::LEVEL,
+        mode,
         configManager.getMaxFilesPerLevel()
     );
 
@@ -54,12 +53,17 @@ void KVStore::put(const std::string& key, const std::string& value){
 }
 
 bool KVStore::get(const std::string& key, std::string& value){
+
+    // 1) Check MemTable first
     if(memTable.get(key, value)){
+        if(value == MemTable::TOMBSTONE) return false;
         return true;
     }
 
+    // 2) Check SSTables (newest to oldest)
     for(auto it = sstables.rbegin(); it != sstables.rend(); ++it){
         if(it->get(key, value)){
+            if(value == MemTable::TOMBSTONE) return false;
             return true;
         }
     }

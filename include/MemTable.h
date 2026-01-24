@@ -11,6 +11,7 @@ public:
     void put(const std::string& key, const std::string& value);
     bool get(const std::string& key, std::string& value) const;
     void remove(const std::string& key);
+    static const std::string TOMBSTONE;
 
     bool isFull() const;
      bool isEmpty() const;

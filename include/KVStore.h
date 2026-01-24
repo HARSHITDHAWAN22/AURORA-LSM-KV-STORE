@@ -13,7 +13,7 @@
 
 class KVStore{
 public:
-    explicit KVStore(const std::string& configPath);
+    explicit KVStore(const std::string& configPath, const std:: string & strategy);
 
     // Core operations
     void put(const std::string& key, const std::string& value);
