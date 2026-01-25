@@ -11,10 +11,13 @@
 #include "ManifestManager.h"
 #include "WAL.h"
 
+#include<thread>
+#include<atomic>
+
 class KVStore{
 public:
     explicit KVStore(const std::string& configPath,const std::string& strategy);
-
+    ~KVStore();
     void put(const std::string& key,const std::string& value);
     bool get(const std::string& key,std::string& value);
     void deleteKey(const std::string& key);
@@ -33,6 +36,11 @@ private:
     ManifestManager manifest;
     WAL wal;                    
     int sstableCounter;
+
+    std::thread flushThread;
+    std::atomic<bool> running;
+
+    void backgroundFlush();
 };
 
 #endif

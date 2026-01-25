@@ -8,7 +8,7 @@ class MemTable;
 
 class WAL{
 public:
-    explicit WAL(const std::string& path);
+    explicit WAL(const std::string& path,size_t batchSize=10);
 
     void logPut(const std::string& key,const std::string& value);
     void logDelete(const std::string& key);
@@ -19,8 +19,9 @@ public:
     void clear();   // truncate WAL (after SSTable flush)
 
 private:
-    std::string walPath;
+    std::string path;
     std::vector<std::string> buffer;
+    size_t batchSize;
 };
 
 #endif

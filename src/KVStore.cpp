@@ -1,8 +1,11 @@
 #include "KVStore.h"
 #include <iostream>
 #include <fstream>
+#include<chrono>
+#include<thread>
 
 KVStore::KVStore(const std::string& configPath,const std::string& strategy)
+   
     : configManager(configPath),
       memTable(0),
       compaction(
@@ -20,6 +23,7 @@ KVStore::KVStore(const std::string& configPath,const std::string& strategy)
         return;
     }
 
+    wal.replay(memTable); // WAL recovery before MemTable init
     memTable=MemTable(configManager.getMemTableMaxEntries());
 
     compaction=Compaction(
@@ -31,8 +35,13 @@ KVStore::KVStore(const std::string& configPath,const std::string& strategy)
 
     loadFromManifest();
 
-    // 🔑 WAL recovery
+    //  WAL recovery
     wal.replay(memTable);
+
+   std::thread flushThread;
+    std::atomic<bool> running;
+
+    void backgroundFlush();
 }
 
 void KVStore::loadFromManifest(){
@@ -137,4 +146,11 @@ void KVStore::scan(const std::string& start,const std::string& end){
 
 void KVStore::runCompactionIfNeeded(){
     compaction.run(sstables);
+}
+
+KVStore::~KVStore(){
+    running = false;
+    if(flushThread.joinable()){
+        flushThread.join();
+    }
 }

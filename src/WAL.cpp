@@ -1,59 +1,72 @@
 #include "WAL.h"
 #include "MemTable.h"
-#include <cstdio>
 
-#ifdef _WIN32
-#include <io.h>
-#define fsync _commit
-#else
-#include <unistd.h>
-#endif
+#include <fstream>
+#include <filesystem>
+#include <sstream>
 
-WAL::WAL(const std::string& path):walPath(path){}
+WAL::WAL(const std::string& path, size_t batchSize)
+    : path(path), batchSize(batchSize) {
+
+    std::filesystem::create_directories(
+        std::filesystem::path(path).parent_path()
+    );
+}
 
 void WAL::logPut(const std::string& key,const std::string& value){
-    buffer.push_back("PUT "+key+" "+value);
+    buffer.push_back("PUT " + key + " " + value);
+
+    if(buffer.size() >= batchSize){
+        flush();
+    }
 }
 
 void WAL::logDelete(const std::string& key){
-    buffer.push_back("DEL "+key);
+    buffer.push_back("DEL " + key);
+
+    if(buffer.size() >= batchSize){
+        flush();
+    }
 }
 
 void WAL::flush(){
-    if(buffer.empty()) return;
+    if(buffer.empty())
+        return;
 
-    FILE* fp = fopen(walPath.c_str(),"a");
-    if(!fp) return;
+    std::ofstream out(path,std::ios::app);
+    if(!out.is_open())
+        return;
 
-    for(const auto& rec:buffer){
-        fprintf(fp,"%s\n",rec.c_str());
+    for(const auto& entry : buffer){
+        out << entry << "\n";
     }
 
-    fflush(fp);
-    fsync(fileno(fp));   //durable on disk
-    fclose(fp);
-
+    out.flush();
     buffer.clear();
 }
 
 void WAL::replay(MemTable& memTable){
-    FILE* fp = fopen(walPath.c_str(),"r");
-    if(!fp) return;
+    std::ifstream in(path);
+    if(!in.is_open())
+        return;
 
-    char op[8],key[256],value[256];
-    while(fscanf(fp,"%7s %255s",op,key)==2){
-        if(strcmp(op,"PUT")==0){
-            fscanf(fp,"%255s",value);
+    std::string line;
+    while(std::getline(in,line)){
+        std::istringstream iss(line);
+        std::string op,key,value;
+
+        iss >> op >> key;
+
+        if(op=="PUT"){
+            iss >> value;
             memTable.put(key,value);
-        }else if(strcmp(op,"DEL")==0){
+        }
+        else if(op=="DEL"){
             memTable.remove(key);
         }
     }
-
-    fclose(fp);
 }
 
 void WAL::clear(){
-    FILE* fp = fopen(walPath.c_str(),"w");
-    if(fp) fclose(fp);
+    std::ofstream out(path,std::ios::trunc);
 }
