@@ -85,6 +85,10 @@ int main(int argc,char* argv[]){
         }
         store.scan(argv[2],argv[3]);
     }
+    else if(command=="flush"){
+    store.flush();
+    std::cout<<"FLUSHED\n";
+}
     else{
         std::cerr<<"Unknown command\n";
     }

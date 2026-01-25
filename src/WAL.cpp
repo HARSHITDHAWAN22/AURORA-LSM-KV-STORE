@@ -1,35 +1,59 @@
 #include "WAL.h"
 #include "MemTable.h"
-#include <fstream>
+#include <cstdio>
+
+#ifdef _WIN32
+#include <io.h>
+#define fsync _commit
+#else
+#include <unistd.h>
+#endif
 
 WAL::WAL(const std::string& path):walPath(path){}
 
 void WAL::logPut(const std::string& key,const std::string& value){
-    std::ofstream out(walPath,std::ios::app);
-    out<<"PUT "<<key<<" "<<value<<"\n";
+    buffer.push_back("PUT "+key+" "+value);
 }
 
 void WAL::logDelete(const std::string& key){
-    std::ofstream out(walPath,std::ios::app);
-    out<<"DEL "<<key<<"\n";
+    buffer.push_back("DEL "+key);
+}
+
+void WAL::flush(){
+    if(buffer.empty()) return;
+
+    FILE* fp = fopen(walPath.c_str(),"a");
+    if(!fp) return;
+
+    for(const auto& rec:buffer){
+        fprintf(fp,"%s\n",rec.c_str());
+    }
+
+    fflush(fp);
+    fsync(fileno(fp));   //durable on disk
+    fclose(fp);
+
+    buffer.clear();
 }
 
 void WAL::replay(MemTable& memTable){
-    std::ifstream in(walPath);
-    if(!in.is_open()) return;
+    FILE* fp = fopen(walPath.c_str(),"r");
+    if(!fp) return;
 
-    std::string op,key,value;
-    while(in>>op>>key){
-        if(op=="PUT"){
-            in>>value;
+    char op[8],key[256],value[256];
+    while(fscanf(fp,"%7s %255s",op,key)==2){
+        if(strcmp(op,"PUT")==0){
+            fscanf(fp,"%255s",value);
             memTable.put(key,value);
-        }
-        else if(op=="DEL"){
+        }else if(strcmp(op,"DEL")==0){
             memTable.remove(key);
         }
     }
+
+    fclose(fp);
 }
 
 void WAL::clear(){
-    std::ofstream out(walPath,std::ios::trunc);
+    FILE* fp = fopen(walPath.c_str(),"w");
+    if(fp) fclose(fp);
 }

@@ -91,14 +91,17 @@ void KVStore::flushMemTable(){
         configManager.getBloomFilterHashCount()
     );
 
-    if(sstable.writeToDisk(memTable.getData())){
-        sstables.push_back(sstable);
-        manifest.addSSTable(filePath);
-        manifest.save();
-        memTable.clear();
-        wal.clear();               // 🔑 WAL cleared only after success
-        runCompactionIfNeeded();
-    }
+   if(sstable.writeToDisk(memTable.getData())){
+    wal.flush();            // WAL hits disk
+    wal.clear();            // WAL cleared after durable flush
+
+    sstables.push_back(sstable);
+    manifest.addSSTable(filePath);
+    manifest.save();
+    memTable.clear();
+
+    runCompactionIfNeeded();
+}
 }
 
 void KVStore::flush(){

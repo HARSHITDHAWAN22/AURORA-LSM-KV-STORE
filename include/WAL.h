@@ -2,6 +2,7 @@
 #define WAL_H
 
 #include <string>
+#include <vector>
 
 class MemTable;
 
@@ -13,11 +14,13 @@ public:
     void logDelete(const std::string& key);
 
     void replay(MemTable& memTable);
-    void clear();
+
+    void flush();   // write buffer to disk + fsync
+    void clear();   // truncate WAL (after SSTable flush)
 
 private:
-
     std::string walPath;
+    std::vector<std::string> buffer;
 };
 
 #endif
