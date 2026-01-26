@@ -3,6 +3,9 @@
 
 #include <string>
 #include <vector>
+#include <thread>
+#include <atomic>
+#include <mutex>
 
 #include "ConfigManager.h"
 #include "MemTable.h"
@@ -11,36 +14,43 @@
 #include "ManifestManager.h"
 #include "WAL.h"
 
-#include<thread>
-#include<atomic>
-
 class KVStore{
 public:
-    explicit KVStore(const std::string& configPath,const std::string& strategy);
+    // MUST MATCH CPP
+    explicit KVStore(const std::string& configPath,
+                     const std::string& strategy);
+
     ~KVStore();
+
     void put(const std::string& key,const std::string& value);
     bool get(const std::string& key,std::string& value);
     void deleteKey(const std::string& key);
-    void scan(const std::string& start,const std::string& end);
+
     void flush();
+    void scan(const std::string& start,const std::string& end);
 
 private:
     void flushMemTable();
-    void runCompactionIfNeeded();
     void loadFromManifest();
+    void runCompactionIfNeeded();
+    void backgroundFlush();
 
+private:
     ConfigManager configManager;
-    MemTable memTable;
+
+    // POINTER (mutex-safe)
+    MemTable* memTable;
+
+    WAL wal;
     std::vector<SSTable> sstables;
     Compaction compaction;
     ManifestManager manifest;
-    WAL wal;                    
+
     int sstableCounter;
 
     std::thread flushThread;
     std::atomic<bool> running;
-
-    void backgroundFlush();
+    std::mutex flushMutex;
 };
 
 #endif

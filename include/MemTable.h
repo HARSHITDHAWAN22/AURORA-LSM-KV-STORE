@@ -3,6 +3,7 @@
 
 #include<string>
 #include<map>
+#include<mutex>
 
 class MemTable{
 public:
@@ -23,7 +24,7 @@ public:
 
 
 private:
-
+    mutable std::mutex mtx;
     std::map<std::string, std::string> table;
     int maxEntries;
 };

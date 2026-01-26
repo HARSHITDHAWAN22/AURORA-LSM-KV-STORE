@@ -3,70 +3,95 @@
 
 #include <fstream>
 #include <filesystem>
-#include <sstream>
+#include <cstring>
+#include<mutex>
+std::mutex mtx;
 
-WAL::WAL(const std::string& path, size_t batchSize)
-    : path(path), batchSize(batchSize) {
+
+enum OpCode : uint8_t {
+    PUT = 1,
+    DEL = 2
+};
+
+WAL::WAL(const std::string& path,size_t batchSize)
+    : path(path), batchSize(batchSize){
 
     std::filesystem::create_directories(
         std::filesystem::path(path).parent_path()
     );
 }
 
-void WAL::logPut(const std::string& key,const std::string& value){
-    buffer.push_back("PUT " + key + " " + value);
+void WAL::appendUInt32(uint32_t v){
+    for(int i = 0; i < 4; ++i){
+        buffer.push_back(static_cast<char>((v >> (i * 8)) & 0xFF));
+    }
+}
 
-    if(buffer.size() >= batchSize){
+void WAL::logPut(const std::string& key,const std::string& value){
+    std::lock_guard<std::mutex> lock(mtx);
+    buffer.push_back(static_cast<char>(PUT));
+    appendUInt32(static_cast<uint32_t>(key.size()));
+    appendUInt32(static_cast<uint32_t>(value.size()));
+
+    buffer.insert(buffer.end(), key.begin(), key.end());
+    buffer.insert(buffer.end(), value.begin(), value.end());
+
+    if(buffer.size() >= batchSize * 64){
         flush();
     }
 }
 
 void WAL::logDelete(const std::string& key){
-    buffer.push_back("DEL " + key);
+    std::lock_guard<std::mutex> lock(mtx);
+    buffer.push_back(static_cast<char>(DEL));
+    appendUInt32(static_cast<uint32_t>(key.size()));
+    appendUInt32(0);
 
-    if(buffer.size() >= batchSize){
+    buffer.insert(buffer.end(), key.begin(), key.end());
+
+    if(buffer.size() >= batchSize * 64){
         flush();
     }
 }
 
 void WAL::flush(){
-    if(buffer.empty())
-        return;
+    std::lock_guard<std::mutex> lock(mtx);
+    if(buffer.empty()) return;
 
-    std::ofstream out(path,std::ios::app);
-    if(!out.is_open())
-        return;
-
-    for(const auto& entry : buffer){
-        out << entry << "\n";
-    }
-
+    std::ofstream out(path,std::ios::binary | std::ios::app);
+    out.write(buffer.data(), buffer.size());
     out.flush();
+
     buffer.clear();
 }
 
 void WAL::replay(MemTable& memTable){
-    std::ifstream in(path);
-    if(!in.is_open())
-        return;
+    std::ifstream in(path,std::ios::binary);
+    if(!in.is_open()) return;
 
-    std::string line;
-    while(std::getline(in,line)){
-        std::istringstream iss(line);
-        std::string op,key,value;
+    while(true){
+        uint8_t op;
+        uint32_t keyLen, valLen;
 
-        iss >> op >> key;
+        if(!in.read(reinterpret_cast<char*>(&op),1)) break;
+        in.read(reinterpret_cast<char*>(&keyLen),4);
+        in.read(reinterpret_cast<char*>(&valLen),4);
 
-        if(op=="PUT"){
-            iss >> value;
+        std::string key(keyLen,'\0');
+        in.read(&key[0],keyLen);
+
+        if(op == PUT){
+            std::string value(valLen,'\0');
+            in.read(&value[0],valLen);
             memTable.put(key,value);
         }
-        else if(op=="DEL"){
+        else if(op == DEL){
             memTable.remove(key);
         }
     }
 }
 
 void WAL::clear(){
-    std::ofstream out(path,std::ios::trunc);
+    std::lock_guard<std::mutex> lock(mtx);
+    std::ofstream out(path,std::ios::binary | std::ios::trunc);
 }
