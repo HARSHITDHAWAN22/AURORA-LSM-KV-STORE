@@ -5,7 +5,17 @@
 #include<map>
 #include "BloomFilter.h"
 
+
 // Immutable on-disk table with an attached Bloom filter
+
+struct SSTableIndexEntry {
+    std::string key;
+    uint64_t offset;
+};
+
+
+
+
 
 class SSTable{
 public:
@@ -27,6 +37,11 @@ private:
 
     std::string filePath;
     BloomFilter bloom;
+    std::vector<SSTableIndexEntry> sparseIndex;
+    uint64_t dataSectionOffset;   // start of KV records
+    mutable std::vector<std::pair<std::string, size_t>> sparseIndex;
+
+
 };
 
 #endif

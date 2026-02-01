@@ -1,5 +1,7 @@
 #include "SSTable.h"
 #include <fstream>
+#include <vector>
+
 
 SSTable::SSTable(const std::string& filePath,
                  size_t bloomBitSize,
@@ -25,10 +27,22 @@ bool SSTable::writeToDisk(const std::map<std::string, std::string>& data){
     std::ofstream out(filePath);
     if(!out.is_open()) return false;
 
-    for(const auto& entry : data){
-        out << entry.first << "\t" << entry.second << "\n";
-        bloom.add(entry.first);
+    constexpr size_t INDEX_INTERVAL = 64;
+
+size_t lineNo = 0;
+sparseIndex.clear();
+
+for(const auto& entry : data){
+
+    if(lineNo % INDEX_INTERVAL == 0){
+        sparseIndex.emplace_back(entry.first, lineNo);
     }
+
+    out << entry.first << "\t" << entry.second << "\n";
+    bloom.add(entry.first);
+    lineNo++;
+}
+
     return true;
 }
 
@@ -38,17 +52,40 @@ bool SSTable::get(const std::string& key, std::string& value) const{
     std::ifstream in(filePath);
     if(!in.is_open()) return false;
 
-    std::string line;
-    while(std::getline(in, line)){
-        auto pos = line.find('\t');
-        if(pos == std::string::npos) continue;
+    size_t startLine = 0;
 
-        if(line.substr(0, pos) == key){
-            value = line.substr(pos + 1);
-            return true;
-        }
+// binary search sparse index
+size_t l = 0, r = sparseIndex.size();
+while(l < r){
+    size_t mid = (l + r) / 2;
+    if(sparseIndex[mid].first <= key){
+        startLine = sparseIndex[mid].second;
+        l = mid + 1;
+    } else {
+        r = mid;
     }
-    return false;
+}
+
+// skip lines
+std::string line;
+for(size_t i = 0; i < startLine && std::getline(in, line); i++);
+
+// bounded scan
+while(std::getline(in, line)){
+    auto pos = line.find('\t');
+    if(pos == std::string::npos) continue;
+
+    std::string currentKey = line.substr(0, pos);
+    if(currentKey == key){
+        value = line.substr(pos + 1);
+        return true;
+    }
+    
+    if(currentKey > key){
+        break;
+    }
+}
+
 }
 
 const std::string& SSTable::getFilePath() const{
