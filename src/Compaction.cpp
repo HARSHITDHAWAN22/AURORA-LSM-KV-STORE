@@ -1,7 +1,14 @@
 #include "Compaction.h"
+
 #include <map>
-#include <fstream>
 #include <iostream>
+#include <vector>
+#include <ctime>
+
+#include "SSTableIterator.h"
+#include "MergeIterator.h"
+#include "MemTable.h"   // MemTable::TOMBSTONE
+
 
 Compaction::Compaction(Strategy strategy, int maxFilesPerLevel)
     : strategy(strategy),
@@ -15,46 +22,47 @@ void Compaction::run(std::vector<SSTable>& sstables){
     }
 }
 
-// Level-based compaction: triggered when file count exceeds limit
+// ================= LEVEL COMPACTION =================
 void Compaction::runLevelCompaction(std::vector<SSTable>& sstables){
-    if((int)sstables.size() <= maxFilesPerLevel){
+    if(static_cast<int>(sstables.size()) <= maxFilesPerLevel){
         return;
     }
 
     std::cout << "Running level-based compaction\n";
 
+    std::vector<SSTableIterator> iters;
+    std::vector<Iterator*> inputs;
+
+    // 🔥 IMPORTANT: OLDEST → NEWEST
+    for(auto it = sstables.begin(); it != sstables.end(); ++it){
+        iters.emplace_back(*it);
+        inputs.push_back(&iters.back());
+    }
+
+    MergeIterator merge(inputs);
     std::map<std::string, std::string> mergedData;
 
-    // Merge SSTables, newer entries overwrite older ones
-    for(const auto& table : sstables){
-        std::ifstream in(table.getFilePath());
-        std::string line;
-
-        while(std::getline(in, line)){
-            auto pos = line.find(':');
-            if (pos == std::string::npos) continue;
-
-            mergedData[line.substr(0, pos)] = line.substr(pos + 1);
-        }
-    }
-
-    // Remove tombstones
-    for(auto it = mergedData.begin(); it != mergedData.end(); ) {
-        if (it->second == "__TOMBSTONE__") {
-            it = mergedData.erase(it);
+    while(merge.valid()){
+        if(merge.value() == MemTable::TOMBSTONE){
+            // tombstone must delete older value
+            mergedData.erase(merge.key());
         } else {
-            ++it;
+            mergedData[merge.key()] = merge.value();
         }
+        merge.next();
     }
 
-    SSTable newTable("data/compacted_sstable.dat", 10000, 3);
+    std::string outPath =
+        "data/compacted_level_" + std::to_string(std::time(nullptr)) + ".dat";
+
+    SSTable newTable(outPath, 10000, 3);
     newTable.writeToDisk(mergedData);
 
     sstables.clear();
     sstables.push_back(newTable);
 }
 
-// Tiered compaction: merges multiple SSTables in batches
+// ================= TIERED COMPACTION =================
 void Compaction::runTieredCompaction(std::vector<SSTable>& sstables){
     if(sstables.size() < 2){
         return;
@@ -62,33 +70,31 @@ void Compaction::runTieredCompaction(std::vector<SSTable>& sstables){
 
     std::cout << "Running tiered compaction\n";
 
+    std::vector<SSTableIterator> iters;
+    std::vector<Iterator*> inputs;
+
+    // 🔥 IMPORTANT: OLDEST → NEWEST
+    for(auto it = sstables.begin(); it != sstables.end(); ++it){
+        iters.emplace_back(*it);
+        inputs.push_back(&iters.back());
+    }
+
+    MergeIterator merge(inputs);
     std::map<std::string, std::string> mergedData;
 
-
-    for(const auto& table : sstables){
-        std::ifstream in(table.getFilePath());
-        std::string line;
-
-
-        while(std::getline(in, line)){
-            auto pos = line.find(':');
-            if (pos == std::string::npos) continue;
-
-            mergedData[line.substr(0, pos)] = line.substr(pos + 1);
-        }
-    }
-
-
-    // Remove tombstones
-    for(auto it = mergedData.begin(); it != mergedData.end(); ){
-        if (it->second == "__TOMBSTONE__") {
-            it = mergedData.erase(it);
+    while(merge.valid()){
+        if(merge.value() == MemTable::TOMBSTONE){
+            mergedData.erase(merge.key());
         } else {
-            ++it;
+            mergedData[merge.key()] = merge.value();
         }
+        merge.next();
     }
 
-    SSTable newTable("data/tiered_compacted_sstable.dat", 10000, 3);
+    std::string outPath =
+        "data/compacted_tiered_" + std::to_string(std::time(nullptr)) + ".dat";
+
+    SSTable newTable(outPath, 10000, 3);
     newTable.writeToDisk(mergedData);
 
     sstables.clear();

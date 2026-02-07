@@ -1,6 +1,7 @@
 #include "SSTable.h"
 #include <fstream>
 #include <vector>
+#include "MemTable.h"
 
 
 struct SSTableFooter {
@@ -198,6 +199,8 @@ bool SSTable::getBinary(const std::string& key, std::string& value) const {
         in.read(&curVal[0], v);
 
         if (curKey == key) {
+             
+    
             value = curVal;
             return true;
         }

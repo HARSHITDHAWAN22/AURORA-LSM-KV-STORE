@@ -4,6 +4,7 @@
 #include<string>
 #include<map>
 #include<mutex>
+static constexpr const char* TOMBSTONE = "__AURORA_TOMBSTONE__";
 
 class MemTable{
 public:

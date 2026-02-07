@@ -47,6 +47,7 @@ private:
     ManifestManager manifest;
 
     int sstableCounter;
+     void sortSSTablesByAge(); 
 
     std::thread flushThread;
     std::atomic<bool> running;

@@ -23,6 +23,7 @@ private:
     std::string path;
     std::vector<char> buffer;   // binary buffer
     size_t batchSize;
+std::mutex mtx;
 
     void appendUInt32(uint32_t v);
 };

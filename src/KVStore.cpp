@@ -5,6 +5,15 @@
 #include <chrono>
 #include <thread>
 
+#include "MemTable.h"
+#include<math.h>
+#include<algorithm>
+#include "MemTableIterator.h"
+#include "SSTableIterator.h"
+#include "MergeIterator.h"
+#include "RangeIterator.h"
+
+
 KVStore::KVStore(const std::string& configPath,
                  const std::string& strategy)
     : configManager(configPath),
@@ -32,6 +41,7 @@ KVStore::KVStore(const std::string& configPath,
     wal.replay(*memTable);
 
     loadFromManifest();
+    sortSSTablesByAge();
 
     running = true;
     flushThread = std::thread(&KVStore::backgroundFlush, this);
@@ -57,6 +67,15 @@ void KVStore::loadFromManifest(){
         ++sstableCounter;
     }
 }
+void KVStore::sortSSTablesByAge() {
+    std::sort(
+        sstables.begin(),
+        sstables.end(),
+        [](const SSTable& a, const SSTable& b) {
+            return a.getFilePath() < b.getFilePath();
+        }
+    );
+}
 
 void KVStore::put(const std::string& key,const std::string& value){
     wal.logPut(key,value);
@@ -69,11 +88,13 @@ void KVStore::put(const std::string& key,const std::string& value){
 
 bool KVStore::get(const std::string& key,std::string& value){
     if(memTable->get(key,value)){
+         if(value == TOMBSTONE) return false;
         return true;
     }
 
     for(auto it = sstables.rbegin(); it != sstables.rend(); ++it){
         if(it->get(key,value)){
+              if(value == TOMBSTONE) return false;
             return true;
         }
     }
@@ -82,7 +103,8 @@ bool KVStore::get(const std::string& key,std::string& value){
 
 void KVStore::deleteKey(const std::string& key){
     wal.logDelete(key);
-    memTable->remove(key);
+    memTable->put(key, TOMBSTONE);
+
 
     if(memTable->isFull()){
         flushMemTable();
@@ -105,49 +127,68 @@ void KVStore::flushMemTable(){
         configManager.getBloomFilterHashCount()
     );
 
-    if(sstable.writeToDisk(memTable->getData())){
-        sstables.push_back(sstable);
-        manifest.addSSTable(filePath);
-        manifest.save();
+    if (sstable.writeToDisk(memTable->getData())) {
 
-        memTable->clear();
-        wal.clear();
-        runCompactionIfNeeded();
-    }
+    // 🔥 IMPORTANT FIX
+    SSTable reloaded(
+        filePath,
+        configManager.getBloomFilterBitSize(),
+        configManager.getBloomFilterHashCount()
+    );
+
+    sstables.push_back(reloaded);
+
+    manifest.addSSTable(filePath);
+    manifest.save();
+
+    memTable->clear();
+    wal.clear();
+    runCompactionIfNeeded();
+}
+
 }
 
 void KVStore::flush(){
     flushMemTable();
+    sortSSTablesByAge();
 }
 
 void KVStore::scan(const std::string& start,const std::string& end){
-    std::unordered_set<std::string> seen;
+    // create iterators
+    std::vector<Iterator*> inputs;
 
-    for(const auto& kv : memTable->getData()){
-        if(kv.first >= start && kv.first <= end){
-            std::cout << kv.first << " -> " << kv.second << "\n";
-            seen.insert(kv.first);
-        }
+    // MemTable iterator (highest priority)
+    MemTableIterator memIter(
+        memTable->getData().cbegin(),
+        memTable->getData().cend()
+    );
+    inputs.push_back(&memIter);
+
+    // SSTable iterators (newest first = higher priority)
+    std::vector<SSTableIterator> sstIters;
+    for(auto it = sstables.rbegin(); it != sstables.rend(); ++it){
+        sstIters.emplace_back(*it);
+        inputs.push_back(&sstIters.back());
     }
 
-    for(auto it = sstables.rbegin(); it != sstables.rend(); ++it){
-        std::ifstream in(it->getFilePath());
-        std::string line;
+    // merge iterator
+    MergeIterator merge(inputs);
 
-        while(std::getline(in,line)){
-            auto pos = line.find(':');
-            if(pos == std::string::npos) continue;
+    // range filter 
+    RangeIterator range(&merge, start, end);
 
-            std::string key = line.substr(0,pos);
-            std::string value = line.substr(pos+1);
-
-            if(key >= start && key <= end && !seen.count(key)){
-                std::cout << key << " -> " << value << "\n";
-                seen.insert(key);
-            }
-        }
+    // output
+    while(range.valid()){
+       if(range.value() != TOMBSTONE){
+    std::cout << range.key()
+              << " -> "
+              << range.value()
+              << "\n";
+}
+ range.next(); 
     }
 }
+
 
 void KVStore::backgroundFlush(){
     while(running){

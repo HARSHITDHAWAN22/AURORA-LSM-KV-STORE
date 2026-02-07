@@ -5,7 +5,8 @@
 #include <filesystem>
 #include <cstring>
 #include<mutex>
-std::mutex mtx;
+
+
 
 
 enum OpCode : uint8_t {
@@ -86,7 +87,8 @@ void WAL::replay(MemTable& memTable){
             memTable.put(key,value);
         }
         else if(op == DEL){
-            memTable.remove(key);
+            memTable.put(key,  MemTable::TOMBSTONE);
+
         }
     }
 }

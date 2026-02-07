@@ -19,16 +19,14 @@ bool MemTable::get(const std::string& key, std::string& value) const{
         return false;
     }
     
-    if(it->second == TOMBSTONE){
-        return true;   
-    }
+   
     value = it->second;
     return true;
 }
 
 void MemTable::remove(const std::string& key){
     std::lock_guard<std::mutex> lock(mtx);
-    table[key] = "__TOMBSTONE__";
+    table[key] =TOMBSTONE;
 }
 
 
