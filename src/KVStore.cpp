@@ -41,7 +41,7 @@ KVStore::KVStore(const std::string& configPath,
     wal.replay(*memTable);
 
     loadFromManifest();
-    sortSSTablesByAge();
+    //sortSSTablesByAge();
 
     running = true;
     flushThread = std::thread(&KVStore::backgroundFlush, this);
@@ -67,15 +67,17 @@ void KVStore::loadFromManifest(){
         ++sstableCounter;
     }
 }
-void KVStore::sortSSTablesByAge() {
-    std::sort(
-        sstables.begin(),
-        sstables.end(),
-        [](const SSTable& a, const SSTable& b) {
-            return a.getFilePath() < b.getFilePath();
-        }
-    );
-}
+// void KVStore::sortSSTablesByAge() {
+//     std::sort(
+//         sstables.begin(),
+//         sstables.end(),
+//         [](const SSTable& a, const SSTable& b) {
+//             return std::stoi(a.getFilePath().substr(a.getFilePath().find_last_of('_') + 1)) <
+//        std::stoi(b.getFilePath().substr(b.getFilePath().find_last_of('_') + 1));
+
+//         }
+//     );
+// }
 
 void KVStore::put(const std::string& key,const std::string& value){
     wal.logPut(key,value);
@@ -87,16 +89,29 @@ void KVStore::put(const std::string& key,const std::string& value){
 }
 
 bool KVStore::get(const std::string& key,std::string& value){
-    if(memTable->get(key,value)){
-         if(value == TOMBSTONE) return false;
+    {
+    std::string memVal;
+    if (memTable->get(key, memVal)) {
+        if (memVal == TOMBSTONE)
+            return false;
+
+        value = memVal;
         return true;
     }
+}
+
 
     for(auto it = sstables.rbegin(); it != sstables.rend(); ++it){
-        if(it->get(key,value)){
-              if(value == TOMBSTONE) return false;
-            return true;
-        }
+        GetResult res = it->get(key, value);
+
+if (res == GetResult::FOUND) {
+    return true;
+}
+if (res == GetResult::DELETED) {
+    return false;
+}
+// NOT_FOUND → continue
+
     }
     return false;
 }
@@ -129,7 +144,7 @@ void KVStore::flushMemTable(){
 
     if (sstable.writeToDisk(memTable->getData())) {
 
-    // 🔥 IMPORTANT FIX
+    // IMPORTANT FIX
     SSTable reloaded(
         filePath,
         configManager.getBloomFilterBitSize(),
@@ -150,7 +165,7 @@ void KVStore::flushMemTable(){
 
 void KVStore::flush(){
     flushMemTable();
-    sortSSTablesByAge();
+  //  sortSSTablesByAge();
 }
 
 void KVStore::scan(const std::string& start,const std::string& end){

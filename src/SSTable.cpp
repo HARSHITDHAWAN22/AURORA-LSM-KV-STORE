@@ -3,7 +3,6 @@
 #include <vector>
 #include "MemTable.h"
 
-
 struct SSTableFooter {
     uint64_t indexOffset;
     uint64_t magic;
@@ -63,7 +62,6 @@ bool SSTable::writeToDisk(const std::map<std::string, std::string>& data) {
     constexpr size_t INDEX_INTERVAL = 64;
     sparseIndex.clear();
 
-    // ---- DATA SECTION ----
     for (const auto& entry : data) {
         uint64_t offset = static_cast<uint64_t>(out.tellp());
 
@@ -82,7 +80,6 @@ bool SSTable::writeToDisk(const std::map<std::string, std::string>& data) {
         bloom.add(entry.first);
     }
 
-    // ---- INDEX SECTION ----
     uint64_t indexOffset = static_cast<uint64_t>(out.tellp());
     uint32_t indexCount = static_cast<uint32_t>(sparseIndex.size());
 
@@ -94,70 +91,63 @@ bool SSTable::writeToDisk(const std::map<std::string, std::string>& data) {
         out.write(reinterpret_cast<const char*>(&e.offset), sizeof(e.offset));
     }
 
-    // ---- FOOTER ----
     SSTableFooter footer{indexOffset, SSTABLE_MAGIC};
     out.write(reinterpret_cast<char*>(&footer), sizeof(footer));
-
     out.flush();
+
     return true;
 }
 
-bool SSTable::get(const std::string& key, std::string& value) const {
+GetResult SSTable::get(const std::string& key, std::string& value) const {
     if (isBinarySSTable())
         return getBinary(key, value);
 
-    if (!bloom.mightContain(key)) return false;
+    if (!bloom.mightContain(key))
+        return GetResult::NOT_FOUND;
 
     std::ifstream in(filePath);
-    if (!in.is_open()) return false;
-
-    size_t startLine = 0;
-    size_t l = 0, r = sparseIndex.size();
-
-    while (l < r) {
-        size_t mid = (l + r) / 2;
-        if (sparseIndex[mid].key <= key) {
-            startLine = static_cast<size_t>(sparseIndex[mid].offset);
-            l = mid + 1;
-        } else {
-            r = mid;
-        }
-    }
+    if (!in.is_open())
+        return GetResult::NOT_FOUND;
 
     std::string line;
-    for (size_t i = 0; i < startLine && std::getline(in, line); i++);
-
     while (std::getline(in, line)) {
         if (line == "#INDEX") break;
 
         auto pos = line.find('\t');
         if (pos == std::string::npos) continue;
 
-        std::string currentKey = line.substr(0, pos);
-        if (currentKey == key) {
-            value = line.substr(pos + 1);
-            return true;
+        std::string curKey = line.substr(0, pos);
+        std::string curVal = line.substr(pos + 1);
+
+        if (curKey == key) {
+            if (curVal == MemTable::TOMBSTONE)
+                return GetResult::DELETED;
+
+            value = curVal;
+            return GetResult::FOUND;
         }
-        if (currentKey > key) break;
+
+        if (curKey > key) break;
     }
 
-    return false;
+    return GetResult::NOT_FOUND;
 }
 
-bool SSTable::getBinary(const std::string& key, std::string& value) const {
-    if (!bloom.mightContain(key)) return false;
+GetResult SSTable::getBinary(const std::string& key, std::string& value) const {
+    if (!bloom.mightContain(key))
+        return GetResult::NOT_FOUND;
 
     std::ifstream in(filePath, std::ios::binary);
-    if (!in.is_open()) return false;
+    if (!in.is_open())
+        return GetResult::NOT_FOUND;
 
-    // ---- read footer ----
     in.seekg(-static_cast<std::streamoff>(sizeof(SSTableFooter)), std::ios::end);
     SSTableFooter footer;
     in.read(reinterpret_cast<char*>(&footer), sizeof(footer));
 
-    if (footer.magic != SSTABLE_MAGIC) return false;
+    if (footer.magic != SSTABLE_MAGIC)
+        return GetResult::NOT_FOUND;
 
-    // ---- load index (LOCAL ONLY) ----
     in.seekg(footer.indexOffset);
 
     uint32_t indexCount;
@@ -178,14 +168,12 @@ bool SSTable::getBinary(const std::string& key, std::string& value) const {
         localIndex.emplace_back(ik, off);
     }
 
-    // ---- binary search index ----
     uint64_t startOffset = 0;
     for (const auto& e : localIndex) {
         if (e.key <= key) startOffset = e.offset;
         else break;
     }
 
-    // ---- data scan ----
     in.seekg(static_cast<std::streamoff>(startOffset));
     while (in.good()) {
         uint32_t k, v;
@@ -199,15 +187,17 @@ bool SSTable::getBinary(const std::string& key, std::string& value) const {
         in.read(&curVal[0], v);
 
         if (curKey == key) {
-             
-    
+            if (curVal == MemTable::TOMBSTONE)
+                return GetResult::DELETED;
+
             value = curVal;
-            return true;
+            return GetResult::FOUND;
         }
+
         if (curKey > key) break;
     }
 
-    return false;
+    return GetResult::NOT_FOUND;
 }
 
 void SSTable::loadSparseIndex() {
