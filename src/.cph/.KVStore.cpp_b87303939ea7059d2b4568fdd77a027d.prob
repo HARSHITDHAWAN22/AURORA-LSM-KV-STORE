@@ -1,0 +1,1 @@
+{"name":"Local: KVStore","url":"d:\\Aurora-lsm-kv-store\\src\\KVStore.cpp","tests":[{"id":1770615633719,"input":"","output":""}],"interactive":false,"memoryLimit":1024,"timeLimit":3000,"srcPath":"d:\\Aurora-lsm-kv-store\\src\\KVStore.cpp","group":"local","local":true}
