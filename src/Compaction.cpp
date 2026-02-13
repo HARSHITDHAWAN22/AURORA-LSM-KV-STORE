@@ -9,6 +9,8 @@
 #include "MergeIterator.h"
 #include "MemTable.h"   // MemTable::TOMBSTONE
 
+#include <filesystem>
+
 static bool isFullCompaction(const std::vector<SSTable>& sstables) {
     return sstables.size() > 1;
 }
@@ -55,6 +57,11 @@ void Compaction::runLevelCompaction(std::vector<SSTable>& sstables){
 
     SSTable newTable(outPath, 10000, 3);
     newTable.writeToDisk(mergedData);
+    // optional: print compaction size
+auto fileSize = std::filesystem::file_size(outPath);
+std::cout << "Compaction output size: "
+          << fileSize << " bytes\n";
+
 
     sstables.clear();
     sstables.push_back(newTable);

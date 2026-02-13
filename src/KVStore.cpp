@@ -13,6 +13,23 @@
 #include "MergeIterator.h"
 #include "RangeIterator.h"
 
+#include <filesystem>
+
+
+
+void KVStore::loadStats() {
+    std::ifstream in("metadata/stats.dat", std::ios::binary);
+    if (!in.is_open()) return;
+    in.read(reinterpret_cast<char*>(&stats), sizeof(stats));
+}
+
+void KVStore::saveStats() const {
+    std::ofstream out("metadata/stats.dat",
+                      std::ios::binary | std::ios::trunc);
+    out.write(reinterpret_cast<const char*>(&stats),
+              sizeof(stats));
+}
+
 
 KVStore::KVStore(const std::string& configPath,
                  const std::string& strategy)
@@ -33,6 +50,7 @@ KVStore::KVStore(const std::string& configPath,
         std::cerr << "Config load failed\n";
         std::exit(1);
     }
+loadStats();
 
     //SAFE: heap allocation (no mutex copy)
     memTable = new MemTable(configManager.getMemTableMaxEntries());
@@ -49,6 +67,8 @@ KVStore::KVStore(const std::string& configPath,
 
 KVStore::~KVStore(){
     running = false;
+    saveStats();
+
     if(flushThread.joinable())
         flushThread.join();
 
@@ -80,7 +100,8 @@ void KVStore::loadFromManifest(){
 // }
 
 void KVStore::put(const std::string& key,const std::string& value){
-    totalPuts++;
+   stats.totalPuts++;
+
 
     wal.logPut(key,value);
     memTable->put(key,value);
@@ -91,7 +112,7 @@ void KVStore::put(const std::string& key,const std::string& value){
 }
 
 bool KVStore::get(const std::string& key,std::string& value){
-    {totalGets++;
+    {stats.totalGets++;
 
     std::string memVal;
     if (memTable->get(key, memVal)) {
@@ -146,6 +167,11 @@ void KVStore::flushMemTable(){
     );
 
     if (sstable.writeToDisk(memTable->getData())) {
+        // estimate flush bytes
+for (const auto& kv : memTable->getData()) {
+    stats.totalBytesWritten += kv.first.size() + kv.second.size();
+}
+
 
     // IMPORTANT FIX
     SSTable reloaded(
@@ -162,7 +188,8 @@ void KVStore::flushMemTable(){
     memTable->clear();
     wal.clear();
     runCompactionIfNeeded();
-}totalFlushes++;
+    stats.totalFlushes++;
+}
 
 
 }
@@ -217,16 +244,39 @@ void KVStore::backgroundFlush(){
 }
 
 void KVStore::runCompactionIfNeeded(){
+    size_t before = sstables.size();
+
     compaction.run(sstables);
-     totalCompactions++;
+
+    size_t after = sstables.size();
+
+    if (after < before) {
+       stats.totalCompactions++;
+        // approximate compaction write amplification
+        for (const auto& table : sstables) {
+            stats.totalCompactionBytes += std::filesystem::file_size(table.getFilePath());
+        }
+    }
 }
 
-void KVStore::printStats() const{
+
+void KVStore::printStats() const {
     std::cout << "==== AuroraKV Stats ====\n";
-    std::cout << "Total PUTs        : " << totalPuts << "\n";
-    std::cout << "Total GETs        : " << totalGets << "\n";
-    std::cout << "Total Flushes     : " << totalFlushes << "\n";
-    std::cout << "Total Compactions : " << totalCompactions << "\n";
+    std::cout << "Total PUTs        : " << stats.totalPuts << "\n";
+    std::cout << "Total GETs        : " << stats.totalGets << "\n";
+    std::cout << "Total Flushes     : " << stats.totalFlushes << "\n";
+    std::cout << "Total Compactions : " << stats.totalCompactions << "\n";
     std::cout << "SSTable Count     : " << sstables.size() << "\n";
+
+    std::cout << "Bytes Written     : " << stats.totalBytesWritten << "\n";
+    std::cout << "Compaction Bytes  : " << stats.totalCompactionBytes << "\n";
+
+    if (stats.totalBytesWritten > 0) {
+        double wa =
+            (double)(stats.totalBytesWritten + stats.totalCompactionBytes)
+            / (double)stats.totalBytesWritten;
+        std::cout << "Write Amplification : " << wa << "\n";
+    }
+
     std::cout << "========================\n";
 }

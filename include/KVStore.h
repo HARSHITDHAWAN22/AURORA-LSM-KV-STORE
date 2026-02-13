@@ -14,6 +14,15 @@
 #include "ManifestManager.h"
 #include "WAL.h"
 
+struct KVStats {
+    size_t totalPuts = 0;
+    size_t totalGets = 0;
+    size_t totalFlushes = 0;
+    size_t totalCompactions = 0;
+    size_t totalBytesWritten = 0;
+    size_t totalCompactionBytes = 0;
+};
+
 class KVStore{
 public:
     // MUST MATCH CPP
@@ -28,6 +37,8 @@ public:
 
     void flush();
     void scan(const std::string& start,const std::string& end);
+void loadStats();
+void saveStats() const;
 
 void printStats() const;
 
@@ -38,10 +49,8 @@ private:
     void backgroundFlush();
 
     // ---- statistics ----
-size_t totalPuts = 0;
-size_t totalGets = 0;
-size_t totalFlushes = 0;
-size_t totalCompactions = 0;
+KVStats stats;
+
 
 
 
