@@ -89,6 +89,13 @@ int main(int argc,char* argv[]){
     store.flush();
     std::cout<<"FLUSHED\n";
 }
+
+else if(command == "stats"){
+    store.printStats();
+    std::cout<<"  aurorakv stats\n";
+
+}
+
     else{
         std::cerr<<"Unknown command\n";
     }

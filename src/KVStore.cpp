@@ -80,6 +80,8 @@ void KVStore::loadFromManifest(){
 // }
 
 void KVStore::put(const std::string& key,const std::string& value){
+    totalPuts++;
+
     wal.logPut(key,value);
     memTable->put(key,value);
 
@@ -89,7 +91,8 @@ void KVStore::put(const std::string& key,const std::string& value){
 }
 
 bool KVStore::get(const std::string& key,std::string& value){
-    {
+    {totalGets++;
+
     std::string memVal;
     if (memTable->get(key, memVal)) {
         if (memVal == TOMBSTONE)
@@ -159,7 +162,8 @@ void KVStore::flushMemTable(){
     memTable->clear();
     wal.clear();
     runCompactionIfNeeded();
-}
+}totalFlushes++;
+
 
 }
 
@@ -214,4 +218,15 @@ void KVStore::backgroundFlush(){
 
 void KVStore::runCompactionIfNeeded(){
     compaction.run(sstables);
+     totalCompactions++;
+}
+
+void KVStore::printStats() const{
+    std::cout << "==== AuroraKV Stats ====\n";
+    std::cout << "Total PUTs        : " << totalPuts << "\n";
+    std::cout << "Total GETs        : " << totalGets << "\n";
+    std::cout << "Total Flushes     : " << totalFlushes << "\n";
+    std::cout << "Total Compactions : " << totalCompactions << "\n";
+    std::cout << "SSTable Count     : " << sstables.size() << "\n";
+    std::cout << "========================\n";
 }

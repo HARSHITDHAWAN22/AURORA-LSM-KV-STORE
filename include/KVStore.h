@@ -29,11 +29,22 @@ public:
     void flush();
     void scan(const std::string& start,const std::string& end);
 
+void printStats() const;
+
 private:
     void flushMemTable();
     void loadFromManifest();
     void runCompactionIfNeeded();
     void backgroundFlush();
+
+    // ---- statistics ----
+size_t totalPuts = 0;
+size_t totalGets = 0;
+size_t totalFlushes = 0;
+size_t totalCompactions = 0;
+
+
+
 
 private:
     ConfigManager configManager;
