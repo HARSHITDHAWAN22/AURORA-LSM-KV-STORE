@@ -73,6 +73,13 @@ KVStore::~KVStore(){
         flushThread.join();
 
     delete memTable;
+} 
+void KVStore::setCompactionStrategy(const std::string& s) {
+    if (s == "tiering") {
+        compaction.setStrategy(Compaction::Strategy::TIERED);
+    } else {
+        compaction.setStrategy(Compaction::Strategy::LEVEL);
+    }
 }
 
 void KVStore::loadFromManifest(){

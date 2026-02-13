@@ -15,6 +15,9 @@ public:
 
 
     Compaction(Strategy strategy, int maxFilesPerLevel);
+    void setStrategy(Strategy s);
+Strategy getStrategy() const;
+
 
     // Run compaction on current SSTables
     void run(std::vector<SSTable>& sstables);

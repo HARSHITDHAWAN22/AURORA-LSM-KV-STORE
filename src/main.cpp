@@ -10,10 +10,9 @@ static std::string loadStrategy(){
         return s;
     return "leveling";
 }
-
 static void saveStrategy(const std::string& s){
-    std::ofstream out("metadata/strategy.txt",std::ios::trunc);
-    out<<s;
+    std::ofstream out("metadata/strategy.txt", std::ios::trunc);
+    out << s;
 }
 
 int main(int argc,char* argv[]){
@@ -88,6 +87,24 @@ int main(int argc,char* argv[]){
     else if(command=="flush"){
     store.flush();
     std::cout<<"FLUSHED\n";
+}
+else if(command == "strategy"){
+    if(argc != 3){
+        std::cerr << "strategy requires <leveling|tiering>\n";
+        return 1;
+    }
+
+    std::string newStrategy = argv[2];
+
+    if(newStrategy != "leveling" && newStrategy != "tiering"){
+        std::cerr << "Invalid strategy\n";
+        return 1;
+    }
+
+    saveStrategy(newStrategy);
+    store.setCompactionStrategy(newStrategy);
+
+    std::cout << "Strategy changed to " << newStrategy << "\n";
 }
 
 else if(command == "stats"){

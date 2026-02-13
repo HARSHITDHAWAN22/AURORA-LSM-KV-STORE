@@ -34,6 +34,8 @@ public:
     void put(const std::string& key,const std::string& value);
     bool get(const std::string& key,std::string& value);
     void deleteKey(const std::string& key);
+ void setCompactionStrategy(const std::string& s);
+// void KVStore::setCompactionStrategy(const std::string& s);
 
     void flush();
     void scan(const std::string& start,const std::string& end);

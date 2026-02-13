@@ -18,6 +18,13 @@ static bool isFullCompaction(const std::vector<SSTable>& sstables) {
 Compaction::Compaction(Strategy strategy, int maxFilesPerLevel)
     : strategy(strategy),
       maxFilesPerLevel(maxFilesPerLevel) {}
+void Compaction::setStrategy(Strategy s) {
+    strategy = s;
+}
+
+Compaction::Strategy Compaction::getStrategy() const {
+    return strategy;
+}
 
 void Compaction::run(std::vector<SSTable>& sstables){
     if(strategy == Strategy::LEVEL){
