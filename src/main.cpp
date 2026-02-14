@@ -10,114 +10,79 @@ static std::string loadStrategy(){
         return s;
     return "leveling";
 }
-static void saveStrategy(const std::string& s){
+[[maybe_unused]]static void saveStrategy(const std::string& s){
     std::ofstream out("metadata/strategy.txt", std::ios::trunc);
     out << s;
 }
 
-int main(int argc,char* argv[]){
-    if(argc<2){
-        std::cout<<"Usage:\n";
-        std::cout<<"  aurorakv start <leveling|tiering>\n";
-        std::cout<<"  aurorakv put <key> <value>\n";
-        std::cout<<"  aurorakv get <key>\n";
-        std::cout<<"  aurorakv delete <key>\n";
-        std::cout<<"  aurorakv scan <start> <end>\n";
+int main(int argc, char* argv[]) {
+
+    if(argc < 2){
+        std::cout << "Usage:\n";
+        std::cout << "  aurorakv shell\n";
+        std::cout << "  aurorakv start <leveling|tiering>\n";
         return 0;
     }
 
-    std::string command=argv[1];
+    std::string command = argv[1];
 
-    // -------- START (set strategy once) --------
-    if(command=="start"){
-        if(argc!=3){
-            std::cerr<<"start requires <leveling|tiering>\n";
-            return 1;
+    if(command == "shell") {
+
+        std::string strategy = loadStrategy();
+        KVStore store("config/system_config.json", strategy);
+
+        std::cout << "AuroraKV Shell Mode\n";
+        std::cout << "Type 'exit' to quit\n";
+
+        std::string cmd;
+
+        while(true) {
+
+            std::cout << ">> ";
+            std::cin >> cmd;
+
+            if(cmd == "exit") break;
+
+            if(cmd == "put") {
+                std::string k, v;
+                std::cin >> k >> v;
+                store.put(k, v);
+                std::cout << "OK\n";
+            }
+
+            else if(cmd == "get") {
+                std::string k, val;
+                std::cin >> k;
+                if(store.get(k, val))
+                    std::cout << val << "\n";
+                else
+                    std::cout << "NOT FOUND\n";
+            }
+
+            else if(cmd == "delete") {
+                std::string k;
+                std::cin >> k;
+                store.deleteKey(k);
+                std::cout << "DELETED\n";
+            }
+
+            else if(cmd == "flush") {
+                store.flush();
+                std::cout << "FLUSHED\n";
+            }
+
+            else if(cmd == "stats") {
+                store.printStats();
+            }
+
+            else {
+                std::cout << "Unknown command\n";
+            }
         }
 
-        std::string strategy=argv[2];
-        if(strategy!="leveling" && strategy!="tiering"){
-            std::cerr<<"Invalid strategy\n";
-            return 1;
-        }
-
-        saveStrategy(strategy);
-        std::cout<<"Strategy set to "<<strategy<<"\n";
         return 0;
     }
 
-    // -------- ALL OTHER COMMANDS --------
-    std::string strategy=loadStrategy();
-    KVStore store("config/system_config.json",strategy);
-
-    if(command=="put"){
-        if(argc!=4){
-            std::cerr<<"put requires <key> <value>\n";
-            return 1;
-        }
-        store.put(argv[2],argv[3]);
-        std::cout<<"OK\n";
-    }
-    else if(command=="get"){
-        if(argc!=3){
-            std::cerr<<"get requires <key>\n";
-            return 1;
-        }
-        std::string value;
-        if(store.get(argv[2],value))
-            std::cout<<value<<"\n";
-        else
-            std::cout<<"NOT FOUND\n";
-    }
-    else if(command=="delete"){
-        if(argc!=3){
-            std::cerr<<"delete requires <key>\n";
-            return 1;
-        }
-        store.deleteKey(argv[2]);
-        std::cout<<"DELETED\n";
-    }
-    else if(command=="scan"){
-        if(argc!=4){
-            std::cerr<<"scan requires <start> <end>\n";
-            return 1;
-        }
-        store.scan(argv[2],argv[3]);
-    }
-    else if(command=="flush"){
-    store.flush();
-    std::cout<<"FLUSHED\n";
-}
-else if(command == "strategy"){
-    if(argc != 3){
-        std::cerr << "strategy requires <leveling|tiering>\n";
-        return 1;
-    }
-
-    std::string newStrategy = argv[2];
-
-    if(newStrategy != "leveling" && newStrategy != "tiering"){
-        std::cerr << "Invalid strategy\n";
-        return 1;
-    }
-
-    saveStrategy(newStrategy);
-    store.setCompactionStrategy(newStrategy);
-
-    std::cout << "Strategy changed to " << newStrategy << "\n";
-}
-
-else if(command == "stats"){
-    store.printStats();
-    std::cout<<"  aurorakv stats\n";
-
-}
-
-    else{
-        std::cerr<<"Unknown command\n";
-    }
-
-   
-
+    std::cout << "Unknown command\n";
     return 0;
 }

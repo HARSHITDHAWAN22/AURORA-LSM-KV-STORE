@@ -56,7 +56,7 @@ loadStats();
     memTable = new MemTable(configManager.getMemTableMaxEntries());
 
     // WAL recovery
-
+wal.replay(*memTable);
 
 // Initialize LSM levels FIRST
 levels.clear();
@@ -99,8 +99,7 @@ void KVStore::loadFromManifest(){
             configManager.getBloomFilterHashCount()
         );
 
-        if (levels.empty())
-    levels.resize(1);
+        
 
 levels[0].push_back(table);
   // ALL manifest files go to L0 initially
@@ -202,38 +201,36 @@ void KVStore::flushMemTable(){
         configManager.getBloomFilterHashCount()
     );
 
-    if (sstable.writeToDisk(memTable->getData())) {
-        // estimate flush bytes
-for (const auto& kv : memTable->getData()) {
-    stats.totalBytesWritten += kv.first.size() + kv.second.size();
-}
+   if (sstable.writeToDisk(memTable->getData())) {
 
+    for (const auto& kv : memTable->getData()) {
+        stats.totalBytesWritten += kv.first.size() + kv.second.size();
+    }
 
-    // IMPORTANT FIX
     SSTable reloaded(
         filePath,
         configManager.getBloomFilterBitSize(),
         configManager.getBloomFilterHashCount()
     );
 
-
-levels[0].push_back(reloaded);
-
-
+    levels[0].push_back(reloaded);
 
     manifest.addSSTable(filePath);
     manifest.save();
 
     memTable->clear();
     wal.clear();
-    runCompactionIfNeeded();
-    stats.totalFlushes++;
 }
+
+stats.totalFlushes++;
+runCompactionIfNeeded();
+
 
 
 }
 
 void KVStore::flush(){
+     if(!memTable->isEmpty())
     flushMemTable();
   //  sortSSTablesByAge();
 }

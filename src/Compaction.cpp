@@ -15,8 +15,7 @@
 //     return sstables.size() > 1;
 // }
 static size_t levelCapacity(size_t level) {
-    if (level == 0) return 4;
-    return 4ULL << (level - 1);  // 4, 8, 16, 32...
+    return 4ULL<<level ;  // 4, 8, 16, 32...
 }
 
 
@@ -33,18 +32,17 @@ Compaction::Strategy Compaction::getStrategy() const {
 
 void Compaction::run(std::vector<std::vector<SSTable>>& levels) {
 
-    for (size_t level = 0; level < levels.size(); ++level) {
+    for(size_t level = 0; level+1 < levels.size(); ++level) {
 
-        if (levels[level].size() <= levelCapacity(level))
+        if(levels[level].size() <= levelCapacity(level))
             continue;
 
         std::cout << "Compacting L" << level
-                  << " → L" << (level + 1) << "\n";
+                  << " -> L" << (level + 1) << "\n";
 
         std::vector<SSTableIterator> iters;
         std::vector<Iterator*> inputs;
 
-        // OLDEST → NEWEST
         for (auto& table : levels[level]) {
             iters.emplace_back(table);
             inputs.push_back(&iters.back());
@@ -53,12 +51,10 @@ void Compaction::run(std::vector<std::vector<SSTable>>& levels) {
         MergeIterator merge(inputs);
         std::map<std::string, std::string> mergedData;
 
-        while (merge.valid()) {
-
+        while(merge.valid()){
             if (merge.value() != MemTable::TOMBSTONE) {
                 mergedData[merge.key()] = merge.value();
             }
-
             merge.next();
         }
 
@@ -69,16 +65,16 @@ void Compaction::run(std::vector<std::vector<SSTable>>& levels) {
         SSTable newTable(outPath, 10000, 3);
         newTable.writeToDisk(mergedData);
 
-        // ensure next level exists
-        if (level + 1 >= levels.size())
-            levels.resize(level + 2);
-
+        // SAFE next level creation
+        
         levels[level + 1].push_back(newTable);
 
-        // clear current level
         levels[level].clear();
+
+        break;  // IMPORTANT
     }
 }
+
 
 
 
