@@ -14,12 +14,13 @@ public:
     void load();
     void save() const;
 
-    void addSSTable(const std::string& filePath);
-    const std::vector<std::string>& getSSTables() const;
+    void addSSTable(int level, const std::string& filePath);
+    const std::vector<std::vector<std::string>>& getAllSSTables() const;
+    void clear();
 
 private:
     std::string manifestPath;
-    std::vector<std::string> sstableFiles;
+    std::vector<std::vector<std::string>> sstableFilesPerLevel;
 };
 
 #endif

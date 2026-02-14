@@ -91,19 +91,17 @@ void KVStore::setCompactionStrategy(const std::string& s) {
 
 void KVStore::loadFromManifest(){
     manifest.load();
-
-    for(const auto& path : manifest.getSSTables()){
-        SSTable table(
-            path,
-            configManager.getBloomFilterBitSize(),
-            configManager.getBloomFilterHashCount()
-        );
-
-        
-
-levels[0].push_back(table);
-  // ALL manifest files go to L0 initially
-        ++sstableCounter;
+    auto allSSTables = manifest.getAllSSTables();
+    for(size_t level = 0; level < allSSTables.size(); ++level){
+        for(const auto& path : allSSTables[level]){
+            SSTable table(
+                path,
+                configManager.getBloomFilterBitSize(),
+                configManager.getBloomFilterHashCount()
+            );
+            levels[level].push_back(table);
+            ++sstableCounter;
+        }
     }
 }
 
@@ -187,46 +185,37 @@ void KVStore::deleteKey(const std::string& key){
 
 void KVStore::flushMemTable(){
     std::lock_guard<std::mutex> guard(flushMutex);
-
     if(memTable->isEmpty())
         return;
-
     std::string filePath =
         configManager.getSSTableDirectory() +
         "/sstable_" + std::to_string(sstableCounter++) + ".dat";
-
     SSTable sstable(
         filePath,
         configManager.getBloomFilterBitSize(),
         configManager.getBloomFilterHashCount()
     );
-
-   if (sstable.writeToDisk(memTable->getData())) {
-
-    for (const auto& kv : memTable->getData()) {
-        stats.totalBytesWritten += kv.first.size() + kv.second.size();
+    bool flushSuccess = sstable.writeToDisk(memTable->getData());
+    if (flushSuccess) {
+        for (const auto& kv : memTable->getData()) {
+            stats.totalBytesWritten += kv.first.size() + kv.second.size();
+        }
+        SSTable reloaded(
+            filePath,
+            configManager.getBloomFilterBitSize(),
+            configManager.getBloomFilterHashCount()
+        );
+        levels[0].push_back(reloaded);
+        manifest.addSSTable(0, filePath);
+        manifest.save();
+        memTable->clear();
+        wal.clear();
+        stats.totalFlushes++;
+        std::cout << "Flush: L0 size = " << levels[0].size() << std::endl;
+        runCompactionIfNeeded();
+    } else {
+        std::cerr << "Flush failed, WAL not cleared!" << std::endl;
     }
-
-    SSTable reloaded(
-        filePath,
-        configManager.getBloomFilterBitSize(),
-        configManager.getBloomFilterHashCount()
-    );
-
-    levels[0].push_back(reloaded);
-
-    manifest.addSSTable(filePath);
-    manifest.save();
-
-    memTable->clear();
-    wal.clear();
-}
-
-stats.totalFlushes++;
-runCompactionIfNeeded();
-
-
-
 }
 
 void KVStore::flush(){
@@ -248,18 +237,13 @@ void KVStore::scan(const std::string& start,const std::string& end){
 
     // SSTable iterators (newest first = higher priority)
     std::vector<SSTableIterator> sstIters;
-   for(size_t level = 0; level <levels.size(); ++level){
-
-    auto& tables = levels[level];
-
-    for(auto it = tables.rbegin(); it != tables.rend(); ++it){
-
-        std::ifstream in(it->getFilePath(), std::ios::binary);
-        if (!in.is_open()) continue;
-
-        // reuse your SSTableIterator here if needed
+    for(size_t level = 0; level < levels.size(); ++level){
+        auto& tables = levels[level];
+        for(auto it = tables.rbegin(); it != tables.rend(); ++it){
+            sstIters.emplace_back(*it);
+            inputs.push_back(&sstIters.back());
+        }
     }
-}
 
     // merge iterator
     MergeIterator merge(inputs);
@@ -269,13 +253,13 @@ void KVStore::scan(const std::string& start,const std::string& end){
 
     // output
     while(range.valid()){
-       if(range.value() != TOMBSTONE){
-    std::cout << range.key()
-              << " -> "
-              << range.value()
-              << "\n";
-}
- range.next(); 
+        if(range.value() != TOMBSTONE){
+            std::cout << range.key()
+                      << " -> "
+                      << range.value()
+                      << "\n";
+        }
+        range.next(); 
     }
 }
 
@@ -288,8 +272,21 @@ void KVStore::backgroundFlush(){
 }
 
 void KVStore::runCompactionIfNeeded(){
-   compaction.run(levels);
-    
+    size_t l0Threshold = 4; // match Compaction.cpp
+    std::cout << "runCompactionIfNeeded: L0 size = " << levels[0].size() << std::endl;
+    if (levels[0].size() >= l0Threshold) {
+        size_t bytesWritten = compaction.run(levels);
+        // After compaction, update manifest for all levels (only live SSTables)
+        manifest.clear();
+        for(size_t level = 0; level < levels.size(); ++level){
+            for(const auto& sstable : levels[level]){
+                manifest.addSSTable((int)level, sstable.getFilePath());
+            }
+        }
+        manifest.save();
+        stats.totalCompactions++;
+        stats.totalCompactionBytes += bytesWritten;
+    }
 }
 
 
@@ -318,3 +315,5 @@ std::cout << "SSTable Count     : " << total << "\n";
 
     std::cout << "========================\n";
 }
+
+// NOTE: Manifest recovery only loads L0. If compaction moves files to L1+, those are not recovered. Consider extending manifest to track all levels for full recovery.
