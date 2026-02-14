@@ -14,6 +14,11 @@
 // static bool isFullCompaction(const std::vector<SSTable>& sstables){
 //     return sstables.size() > 1;
 // }
+static size_t levelCapacity(size_t level) {
+    if (level == 0) return 4;
+    return 4ULL << (level - 1);  // 4, 8, 16, 32...
+}
+
 
 Compaction::Compaction(Strategy strategy, int maxFilesPerLevel)
     : strategy(strategy),
@@ -28,89 +33,53 @@ Compaction::Strategy Compaction::getStrategy() const {
 
 void Compaction::run(std::vector<std::vector<SSTable>>& levels) {
 
-    if (levels.empty()) return;
+    for (size_t level = 0; level < levels.size(); ++level) {
 
-    // ================= TIERED =================
-    if (strategy == Strategy::TIERED) {
+        if (levels[level].size() <= levelCapacity(level))
+            continue;
 
-        for (size_t level = 0; level < levels.size(); ++level) {
+        std::cout << "Compacting L" << level
+                  << " → L" << (level + 1) << "\n";
 
-            if (levels[level].size() <= L0_THRESHOLD)
-                continue;
+        std::vector<SSTableIterator> iters;
+        std::vector<Iterator*> inputs;
 
-            std::cout << "Tiered compaction at L"
-                      << level << "\n";
-
-            std::vector<SSTableIterator> iters;
-            std::vector<Iterator*> inputs;
-
-            for (auto& table : levels[level]) {
-                iters.emplace_back(table);
-                inputs.push_back(&iters.back());
-            }
-
-            MergeIterator merge(inputs);
-            std::map<std::string, std::string> mergedData;
-
-            while (merge.valid()) {
-                mergedData[merge.key()] = merge.value();
-                merge.next();
-            }
-
-            std::string outPath =
-                "data/Tiered_L" +
-                std::to_string(level) + "_" +
-                std::to_string(std::time(nullptr)) + ".dat";
-
-            SSTable newTable(outPath, 10000, 3);
-            newTable.writeToDisk(mergedData);
-
-            levels[level].clear();
-            levels[level].push_back(newTable);
+        // OLDEST → NEWEST
+        for (auto& table : levels[level]) {
+            iters.emplace_back(table);
+            inputs.push_back(&iters.back());
         }
-    }
 
-    // ================= LEVELING =================
-    else {
+        MergeIterator merge(inputs);
+        std::map<std::string, std::string> mergedData;
 
-        for (size_t level = 0; level < levels.size() - 1; ++level) {
+        while (merge.valid()) {
 
-            if (levels[level].size() <= L0_THRESHOLD)
-                continue;
-
-            std::cout << "Leveling compaction L"
-                      << level << " → L"
-                      << level + 1 << "\n";
-
-            std::vector<SSTableIterator> iters;
-            std::vector<Iterator*> inputs;
-
-            for (auto& table : levels[level]) {
-                iters.emplace_back(table);
-                inputs.push_back(&iters.back());
-            }
-
-            MergeIterator merge(inputs);
-            std::map<std::string, std::string> mergedData;
-
-            while (merge.valid()) {
+            if (merge.value() != MemTable::TOMBSTONE) {
                 mergedData[merge.key()] = merge.value();
-                merge.next();
             }
 
-            std::string outPath =
-                "data/Leveling_L" +
-                std::to_string(level + 1) + "_" +
-                std::to_string(std::time(nullptr)) + ".dat";
-
-            SSTable newTable(outPath, 10000, 3);
-            newTable.writeToDisk(mergedData);
-
-            levels[level].clear();
-            levels[level + 1].push_back(newTable);
+            merge.next();
         }
+
+        std::string outPath =
+            "data/L" + std::to_string(level + 1) +
+            "_" + std::to_string(std::time(nullptr)) + ".dat";
+
+        SSTable newTable(outPath, 10000, 3);
+        newTable.writeToDisk(mergedData);
+
+        // ensure next level exists
+        if (level + 1 >= levels.size())
+            levels.resize(level + 2);
+
+        levels[level + 1].push_back(newTable);
+
+        // clear current level
+        levels[level].clear();
     }
 }
+
 
 
 
