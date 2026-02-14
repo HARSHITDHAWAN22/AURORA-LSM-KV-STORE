@@ -56,10 +56,15 @@ loadStats();
     memTable = new MemTable(configManager.getMemTableMaxEntries());
 
     // WAL recovery
-    wal.replay(*memTable);
 
-    loadFromManifest();
-    levels.resize(MAX_LEVELS);
+
+// Initialize LSM levels FIRST
+levels.clear();
+levels.resize(MAX_LEVELS);
+
+// Load existing SSTables
+loadFromManifest();
+
 
     //sortSSTablesByAge();
 
@@ -94,7 +99,11 @@ void KVStore::loadFromManifest(){
             configManager.getBloomFilterHashCount()
         );
 
-        levels[0].push_back(table);   // ALL manifest files go to L0 initially
+        if (levels.empty())
+    levels.resize(1);
+
+levels[0].push_back(table);
+  // ALL manifest files go to L0 initially
         ++sstableCounter;
     }
 }
@@ -137,7 +146,7 @@ bool KVStore::get(const std::string& key,std::string& value){
 }
 
 
-    for(int level = 0; level < MAX_LEVELS; ++level){
+    for(size_t level = 0; level < levels.size(); ++level){
 
     auto& tables = levels[level];
 
@@ -207,7 +216,9 @@ for (const auto& kv : memTable->getData()) {
         configManager.getBloomFilterHashCount()
     );
 
-    levels[0].push_back(reloaded);
+
+levels[0].push_back(reloaded);
+
 
 
     manifest.addSSTable(filePath);
@@ -240,7 +251,7 @@ void KVStore::scan(const std::string& start,const std::string& end){
 
     // SSTable iterators (newest first = higher priority)
     std::vector<SSTableIterator> sstIters;
-   for(int level = 0; level < MAX_LEVELS; ++level){
+   for(size_t level = 0; level <levels.size(); ++level){
 
     auto& tables = levels[level];
 

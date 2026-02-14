@@ -14,6 +14,9 @@ public:
     };
 
 
+   
+
+
     Compaction(Strategy strategy, int maxFilesPerLevel);
     void setStrategy(Strategy s);
 Strategy getStrategy() const;
@@ -23,9 +26,10 @@ Strategy getStrategy() const;
     void run(std:: vector<std::vector<SSTable>>& levels);
 
 private:
+static constexpr size_t L0_THRESHOLD = 3;
 
-    void runLevelCompaction(std::vector<SSTable>& sstables);
-    void runTieredCompaction(std::vector<SSTable>& sstables);
+
+    
 
 private:
 
