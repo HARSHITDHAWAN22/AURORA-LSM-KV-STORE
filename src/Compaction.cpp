@@ -5,6 +5,7 @@
 #include <vector>
 #include <ctime>
 #include <algorithm>
+#include <cstdio> // for std::remove
 
 #include "SSTableIterator.h"
 #include "MergeIterator.h"
@@ -34,17 +35,33 @@ size_t Compaction::run(std::vector<std::vector<SSTable>>& levels) {
         return 0;   // Do NOT compact early
     std::cout << "Compacting L0 -> L1\n";
     std::cout << "Before compaction: L0 size = " << levels[0].size() << ", L1 size = " << levels[1].size() << std::endl;
-    // Only compact first 4 files
+    // Take a snapshot of the file paths to compact
     size_t filesToCompact = threshold;
+    std::vector<std::string> filesToCompactPaths;
+    for (size_t i = 0; i < filesToCompact && i < levels[0].size(); ++i) {
+        filesToCompactPaths.push_back(levels[0][i].getFilePath());
+    }
+    // Build SSTable objects for compaction from file paths
+    std::vector<SSTable> sstablesToCompact;
+    for (const auto& filePath : filesToCompactPaths) {
+        std::ifstream testFile(filePath, std::ios::binary);
+        if (!testFile.is_open()) {
+            std::cerr << "[ERROR] SSTable file missing: " << filePath << std::endl;
+            continue;
+        }
+        sstablesToCompact.emplace_back(filePath, 10000, 3);
+    }
     std::vector<SSTableIterator> iters;
     std::vector<Iterator*> inputs;
-    iters.reserve(filesToCompact);
-    inputs.reserve(filesToCompact);
-    for (size_t i = 0; i < filesToCompact; ++i) {
-        iters.emplace_back(levels[level][i]);
+    for (auto& sstable : sstablesToCompact) {
+        iters.emplace_back(sstable);
     }
     for (auto& it : iters) {
         inputs.push_back(&it);
+    }
+    if (inputs.empty()) {
+        std::cerr << "[ERROR] No valid SSTables to compact!" << std::endl;
+        return 0;
     }
     MergeIterator merge(inputs);
     std::map<std::string, std::string> mergedData;
@@ -64,19 +81,16 @@ size_t Compaction::run(std::vector<std::vector<SSTable>>& levels) {
     }
     SSTable reloaded(outPath, 10000, 3);
     levels[1].push_back(reloaded);
-    size_t l0_before = levels[0].size();
-    if (levels[0].size() >= filesToCompact) {
-        levels[0].erase(
-            levels[0].begin(),
-            levels[0].begin() + filesToCompact
-        );
+    // Now erase the compacted SSTables from L0 and delete their files
+    for (const auto& filePath : filesToCompactPaths) {
+        auto it = std::find_if(levels[0].begin(), levels[0].end(), [&](const SSTable& s) { return s.getFilePath() == filePath; });
+        if (it != levels[0].end()) {
+            std::cout << "Deleting compacted SSTable file: " << filePath << std::endl;
+            std::remove(filePath.c_str());
+            levels[0].erase(it);
+        }
     }
     size_t l0_after = levels[0].size();
     std::cout << "After erase: L0 size = " << l0_after << ", L1 size = " << levels[1].size() << std::endl;
-    if (l0_after >= l0_before) {
-        std::cerr << "[ERROR] L0 did not shrink after compaction. Forcing clear of L0!" << std::endl;
-        levels[0].clear();
-    }
-    std::cout << "After compaction: L0 size = " << levels[0].size() << ", L1 size = " << levels[1].size() << std::endl;
     return bytesWritten;
 }
