@@ -20,7 +20,7 @@ Strategy getStrategy() const;
 
 
     // Run compaction on current SSTables
-    void run(std::vector<SSTable>& sstables);
+    void run(std:: vector<std::vector<SSTable>>& levels);
 
 private:
 

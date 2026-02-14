@@ -14,7 +14,7 @@
 #include "ManifestManager.h"
 #include "WAL.h"
 
-struct KVStats {
+struct KVStats{
     size_t totalPuts = 0;
     size_t totalGets = 0;
     size_t totalFlushes = 0;
@@ -64,7 +64,11 @@ private:
     MemTable* memTable;
 
     WAL wal;
-    std::vector<SSTable> sstables;
+    std::vector<std::vector<SSTable>>levels;
+    static constexpr int MAX_LEVELS = 4;
+    
+
+
     Compaction compaction;
     ManifestManager manifest;
 

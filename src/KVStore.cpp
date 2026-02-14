@@ -59,6 +59,8 @@ loadStats();
     wal.replay(*memTable);
 
     loadFromManifest();
+    levels.resize(MAX_LEVELS);
+
     //sortSSTablesByAge();
 
     running = true;
@@ -86,14 +88,17 @@ void KVStore::loadFromManifest(){
     manifest.load();
 
     for(const auto& path : manifest.getSSTables()){
-        sstables.emplace_back(
+        SSTable table(
             path,
             configManager.getBloomFilterBitSize(),
             configManager.getBloomFilterHashCount()
         );
+
+        levels[0].push_back(table);   // ALL manifest files go to L0 initially
         ++sstableCounter;
     }
 }
+
 // void KVStore::sortSSTablesByAge() {
 //     std::sort(
 //         sstables.begin(),
@@ -132,18 +137,33 @@ bool KVStore::get(const std::string& key,std::string& value){
 }
 
 
-    for(auto it = sstables.rbegin(); it != sstables.rend(); ++it){
-        GetResult res = it->get(key, value);
+    for(int level = 0; level < MAX_LEVELS; ++level){
 
-if (res == GetResult::FOUND) {
-    return true;
-}
-if (res == GetResult::DELETED) {
-    return false;
-}
-// NOT_FOUND → continue
+    auto& tables = levels[level];
 
+    // L0 → newest first
+    if(level == 0){
+
+        for(auto it = tables.rbegin(); it != tables.rend(); ++it){
+            GetResult res = it->get(key, value);
+
+            if (res == GetResult::FOUND) return true;
+            if (res == GetResult::DELETED) return false;
+        }
     }
+
+    else{
+        // Higher levels: oldest-first (non-overlapping)
+
+        for(auto& table : tables){
+            GetResult res = table.get(key, value);
+
+            if (res == GetResult::FOUND) return true;
+            if (res == GetResult::DELETED) return false;
+        }
+    }
+}
+
     return false;
 }
 
@@ -187,7 +207,8 @@ for (const auto& kv : memTable->getData()) {
         configManager.getBloomFilterHashCount()
     );
 
-    sstables.push_back(reloaded);
+    levels[0].push_back(reloaded);
+
 
     manifest.addSSTable(filePath);
     manifest.save();
@@ -219,10 +240,18 @@ void KVStore::scan(const std::string& start,const std::string& end){
 
     // SSTable iterators (newest first = higher priority)
     std::vector<SSTableIterator> sstIters;
-    for(auto it = sstables.rbegin(); it != sstables.rend(); ++it){
-        sstIters.emplace_back(*it);
-        inputs.push_back(&sstIters.back());
+   for(int level = 0; level < MAX_LEVELS; ++level){
+
+    auto& tables = levels[level];
+
+    for(auto it = tables.rbegin(); it != tables.rend(); ++it){
+
+        std::ifstream in(it->getFilePath(), std::ios::binary);
+        if (!in.is_open()) continue;
+
+        // reuse your SSTableIterator here if needed
     }
+}
 
     // merge iterator
     MergeIterator merge(inputs);
@@ -251,19 +280,8 @@ void KVStore::backgroundFlush(){
 }
 
 void KVStore::runCompactionIfNeeded(){
-    size_t before = sstables.size();
-
-    compaction.run(sstables);
-
-    size_t after = sstables.size();
-
-    if (after < before) {
-       stats.totalCompactions++;
-        // approximate compaction write amplification
-        for (const auto& table : sstables) {
-            stats.totalCompactionBytes += std::filesystem::file_size(table.getFilePath());
-        }
-    }
+   compaction.run(levels);
+    
 }
 
 
@@ -273,7 +291,12 @@ void KVStore::printStats() const {
     std::cout << "Total GETs        : " << stats.totalGets << "\n";
     std::cout << "Total Flushes     : " << stats.totalFlushes << "\n";
     std::cout << "Total Compactions : " << stats.totalCompactions << "\n";
-    std::cout << "SSTable Count     : " << sstables.size() << "\n";
+    size_t total = 0;
+    for(const auto& level : levels)
+    total += level.size();
+
+std::cout << "SSTable Count     : " << total << "\n";
+
 
     std::cout << "Bytes Written     : " << stats.totalBytesWritten << "\n";
     std::cout << "Compaction Bytes  : " << stats.totalCompactionBytes << "\n";

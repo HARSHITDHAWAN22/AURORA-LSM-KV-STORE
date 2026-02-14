@@ -11,7 +11,7 @@
 
 #include <filesystem>
 
-static bool isFullCompaction(const std::vector<SSTable>& sstables) {
+static bool isFullCompaction(const std::vector<SSTable>& sstables){
     return sstables.size() > 1;
 }
 
@@ -26,12 +26,15 @@ Compaction::Strategy Compaction::getStrategy() const {
     return strategy;
 }
 
-void Compaction::run(std::vector<SSTable>& sstables){
-    if(strategy == Strategy::LEVEL){
-        runLevelCompaction(sstables);
-    } else {
-        runTieredCompaction(sstables);
-    }
+void Compaction::run(std:: vector<std::vector<SSTable>>& levels){
+      // TODO: implement multi-level compaction
+
+    // if(strategy == Strategy::LEVEL){
+    //     runLevelCompaction(sstables);
+    // } else {
+    //     runTieredCompaction(sstables);
+    // }
+     (void)levels;   // suppress unused warning
 }
 
 // ================= LEVEL COMPACTION =================
