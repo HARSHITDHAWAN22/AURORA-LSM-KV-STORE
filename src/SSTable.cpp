@@ -2,6 +2,7 @@
 #include <fstream>
 #include <vector>
 #include "MemTable.h"
+#include <iostream>
 
 struct SSTableFooter {
     uint64_t indexOffset;
@@ -13,29 +14,14 @@ SSTable::SSTable(const std::string& filePath,
                  size_t bloomHashCount)
     : filePath(filePath),
       bloom(bloomBitSize, bloomHashCount) {
-
-    loadBloom();
-
+    // Always use binary format
     if (!isBinarySSTable()) {
-        loadSparseIndex();
+        std::cerr << "[SSTable] Warning: File " << filePath << " is not a valid binary SSTable!\n";
     }
 }
 
 void SSTable::loadBloom() {
-    if (isBinarySSTable()) return;
-
-    std::ifstream in(filePath);
-    if (!in.is_open()) return;
-
-    std::string line;
-    while (std::getline(in, line)) {
-        if (line == "#INDEX") break;
-
-        auto pos = line.find('\t');
-        if (pos == std::string::npos) continue;
-
-        bloom.add(line.substr(0, pos));
-    }
+    // No-op: always binary
 }
 
 bool SSTable::isBinarySSTable() const {
@@ -99,38 +85,8 @@ bool SSTable::writeToDisk(const std::map<std::string, std::string>& data) {
 }
 
 GetResult SSTable::get(const std::string& key, std::string& value) const {
-    if (isBinarySSTable())
-        return getBinary(key, value);
-
-    if (!bloom.mightContain(key))
-        return GetResult::NOT_FOUND;
-
-    std::ifstream in(filePath);
-    if (!in.is_open())
-        return GetResult::NOT_FOUND;
-
-    std::string line;
-    while (std::getline(in, line)) {
-        if (line == "#INDEX") break;
-
-        auto pos = line.find('\t');
-        if (pos == std::string::npos) continue;
-
-        std::string curKey = line.substr(0, pos);
-        std::string curVal = line.substr(pos + 1);
-
-        if (curKey == key) {
-            if (curVal == MemTable::TOMBSTONE)
-                return GetResult::DELETED;
-
-            value = curVal;
-            return GetResult::FOUND;
-        }
-
-        if (curKey > key) break;
-    }
-
-    return GetResult::NOT_FOUND;
+    // Always use binary format
+    return getBinary(key, value);
 }
 
 GetResult SSTable::getBinary(const std::string& key, std::string& value) const {
@@ -201,30 +157,7 @@ GetResult SSTable::getBinary(const std::string& key, std::string& value) const {
 }
 
 void SSTable::loadSparseIndex() {
-    if (isBinarySSTable()) return;
-
-    std::ifstream in(filePath);
-    if (!in.is_open()) return;
-
-    std::string line;
-    while (std::getline(in, line)) {
-        if (line == "#INDEX") break;
-    }
-
-    if (!in.good()) return;
-
-    size_t count = 0;
-    in >> count;
-    in.ignore();
-
-    sparseIndex.clear();
-    for (size_t i = 0; i < count; i++) {
-        std::string key;
-        uint64_t lineNo;
-        in >> key >> lineNo;
-        in.ignore();
-        sparseIndex.emplace_back(key, lineNo);
-    }
+    // No-op: always binary
 }
 
 const std::string& SSTable::getFilePath() const {

@@ -6,7 +6,6 @@
 #include <map>
 #include <cstdint>
 
-
 #include "BloomFilter.h"
 static constexpr uint64_t SSTABLE_MAGIC = 0x4155524F52414B56ULL;
 
@@ -18,8 +17,7 @@ enum class GetResult {
 
 struct SSTableIndexEntry {
     std::string key;
-    uint64_t offset;   // line number for text SSTable
-
+    uint64_t offset;   // offset in binary SSTable
     SSTableIndexEntry(const std::string& k, uint64_t o)
         : key(k), offset(o) {}
 };
@@ -31,24 +29,17 @@ public:
             size_t bloomHashCount);
 
     bool writeToDisk(const std::map<std::string, std::string>& data);
-  GetResult get(const std::string& key, std::string& value) const;
-
-
+    GetResult get(const std::string& key, std::string& value) const;
     const std::string& getFilePath() const;
 
 private:
     std::string filePath;
     BloomFilter bloom;
-
-    // sparse index: key → line number
-   std::vector<SSTableIndexEntry> sparseIndex;
-
+    std::vector<SSTableIndexEntry> sparseIndex;
     bool isBinarySSTable() const;
-GetResult getBinary(const std::string& key, std::string& value) const;
-
-
-    void loadBloom();
-    void loadSparseIndex();
+    GetResult getBinary(const std::string& key, std::string& value) const;
+    void loadBloom(); // no-op for binary
+    void loadSparseIndex(); // no-op for binary
 };
 
 #endif // SSTABLE_H
