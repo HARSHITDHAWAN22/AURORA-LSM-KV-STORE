@@ -275,7 +275,8 @@ void KVStore::runCompactionIfNeeded(){
     size_t l0Threshold = 4; // match Compaction.cpp
     std::cout << "runCompactionIfNeeded: L0 size = " << levels[0].size() << std::endl;
     if (levels[0].size() >= l0Threshold) {
-        size_t bytesWritten = compaction.run(levels);
+        compaction.run(levels);
+
         // After compaction, update manifest for all levels (only live SSTables)
         manifest.clear();
         for(size_t level = 0; level < levels.size(); ++level){
@@ -285,7 +286,7 @@ void KVStore::runCompactionIfNeeded(){
         }
         manifest.save();
         stats.totalCompactions++;
-        stats.totalCompactionBytes += bytesWritten;
+        
     }
 }
 
