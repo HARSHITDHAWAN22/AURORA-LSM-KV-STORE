@@ -206,7 +206,11 @@ void KVStore::flushMemTable(){
             configManager.getBloomFilterHashCount()
         );
         levels[0].push_back(reloaded);
-        manifest.addSSTable(0, filePath);
+        std::uint64_t size =
+    std::filesystem::file_size(filePath);
+
+manifest.addSSTable(0, filePath, size);
+
         manifest.save();
         memTable->clear();
         wal.clear();
@@ -281,7 +285,12 @@ void KVStore::runCompactionIfNeeded(){
         manifest.clear();
         for(size_t level = 0; level < levels.size(); ++level){
             for(const auto& sstable : levels[level]){
-                manifest.addSSTable((int)level, sstable.getFilePath());
+               std::string path = sstable.getFilePath();
+std::uint64_t size =
+    std::filesystem::file_size(path);
+
+manifest.addSSTable((int)level, path, size);
+
             }
         }
         manifest.save();
