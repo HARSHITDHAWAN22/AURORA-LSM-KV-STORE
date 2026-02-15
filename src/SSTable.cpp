@@ -57,6 +57,22 @@ SSTable::SSTable(const std::string& filePath,
     }
 }
 
+
+void SSTable::appendKV(const std::string& key,
+                       const std::string& value,
+                       std::ofstream& out) {
+
+    uint32_t keySize = static_cast<uint32_t>(key.size());
+    uint32_t valueSize = static_cast<uint32_t>(value.size());
+
+    out.write(reinterpret_cast<const char*>(&keySize), sizeof(keySize));
+    out.write(key.data(), keySize);
+
+    out.write(reinterpret_cast<const char*>(&valueSize), sizeof(valueSize));
+    out.write(value.data(), valueSize);
+}
+
+
 bool SSTable::isBinarySSTable() const {
     std::ifstream in(filePath, std::ios::binary);
     if (!in.is_open())

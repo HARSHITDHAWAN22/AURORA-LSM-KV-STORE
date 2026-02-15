@@ -15,6 +15,7 @@ enum class GetResult {
     DELETED
 };
 
+
 struct SSTableIndexEntry {
     std::string key;
     uint64_t offset;   // offset in binary SSTable
@@ -31,6 +32,12 @@ public:
     bool writeToDisk(const std::map<std::string, std::string>& data);
     GetResult get(const std::string& key, std::string& value) const;
     const std::string& getFilePath() const;
+
+    void appendKV(const std::string& key,
+              const std::string& value,
+              std::ofstream& out);
+
+
 
 private:
     std::string filePath;

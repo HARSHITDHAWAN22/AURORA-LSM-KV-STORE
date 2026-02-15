@@ -21,14 +21,19 @@ Compaction::Strategy Compaction::getStrategy() const {
 
 void Compaction::run(std::vector<std::vector<SSTable>>& levels) {
 
+    const size_t L0_BATCH = 4;
+    const size_t HIGHER_BATCH = 1;
+
     for (size_t level = 0; level + 1 < levels.size(); ++level) {
 
-        const size_t L0_TRIGGER = 4;
-
-        if (level == 0 && levels[0].size() <= L0_TRIGGER)
+        if (levels[level].empty())
             continue;
 
-        if (levels[level].empty())
+        size_t batchSize = (level == 0)
+                           ? std::min(L0_BATCH, levels[level].size())
+                           : std::min(HIGHER_BATCH, levels[level].size());
+
+        if (batchSize == 0)
             continue;
 
         std::cout << "Compacting Level "
@@ -37,59 +42,42 @@ void Compaction::run(std::vector<std::vector<SSTable>>& levels) {
                   << (level + 1)
                   << std::endl;
 
-        // Move ALL files of this level upward
-        size_t filesToCompact = levels[level].size();
-
         std::vector<SSTableIterator> iters;
-        iters.reserve(filesToCompact);
-
-        for (size_t i = 0; i < filesToCompact; ++i) {
+        for (size_t i = 0; i < batchSize; ++i) {
             iters.emplace_back(levels[level][i]);
         }
 
         std::vector<Iterator*> inputs;
-        inputs.reserve(filesToCompact);
-
         for (auto& it : iters)
             inputs.push_back(&it);
 
         MergeIterator merge(inputs);
+
+        std::map<std::string, std::string> mergedData;
+
+        while (merge.valid()) {
+            if (merge.value() != MemTable::TOMBSTONE) {
+                mergedData[merge.key()] = merge.value();
+            }
+            merge.next();
+        }
 
         std::string outPath =
             "data/L" + std::to_string(level + 1) + "_" +
             std::to_string(std::time(nullptr)) + ".dat";
 
         SSTable writer(outPath, 10000, 3);
-
-        std::map<std::string, std::string> buffer;
-
-        const size_t FLUSH_THRESHOLD = 5000;
-
-        while (merge.valid()) {
-
-            if (merge.value() != MemTable::TOMBSTONE) {
-                buffer[merge.key()] = merge.value();
-            }
-
-            if (buffer.size() >= FLUSH_THRESHOLD) {
-                writer.writeToDisk(buffer);
-                buffer.clear();
-            }
-
-            merge.next();
-        }
-
-        if (!buffer.empty())
-            writer.writeToDisk(buffer);
+        writer.writeToDisk(mergedData);
 
         SSTable reloaded(outPath, 10000, 3);
-
-        if (levels.size() <= level + 1)
-            levels.resize(level + 2);
-
         levels[level + 1].push_back(reloaded);
 
-        // Clear old level (safe memory cleanup)
-        levels[level].clear();
+        // Remove ONLY compacted files
+        levels[level].erase(
+            levels[level].begin(),
+            levels[level].begin() + batchSize
+        );
+
+        return; // stop after one compaction
     }
 }
