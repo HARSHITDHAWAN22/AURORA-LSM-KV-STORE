@@ -14,6 +14,8 @@
 #include "ManifestManager.h"
 #include "WAL.h"
 
+const int MAX_LEVELS = 4;
+
 struct KVStats{
     size_t totalPuts = 0;
     size_t totalGets = 0;

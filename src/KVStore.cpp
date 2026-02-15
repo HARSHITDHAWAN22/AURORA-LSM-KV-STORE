@@ -215,7 +215,6 @@ manifest.addSSTable(0, filePath, size);
         memTable->clear();
         wal.clear();
         stats.totalFlushes++;
-        std::cout << "Flush: L0 size = " << levels[0].size() << std::endl;
         runCompactionIfNeeded();
     } else {
         std::cerr << "Flush failed, WAL not cleared!" << std::endl;
@@ -276,28 +275,46 @@ void KVStore::backgroundFlush(){
 }
 
 void KVStore::runCompactionIfNeeded(){
-    size_t l0Threshold = 4; // match Compaction.cpp
-    std::cout << "runCompactionIfNeeded: L0 size = " << levels[0].size() << std::endl;
-    if (levels[0].size() >= l0Threshold) {
-        compaction.run(levels);
 
-        // After compaction, update manifest for all levels (only live SSTables)
+    bool didCompact = false;
+
+    for(int level = 0; level < MAX_LEVELS - 1; ++level){
+
+        if(manifest.levelOverflow(level)){
+
+            std::cout<< "Compacting Level "
+                    << level
+                      << " → "
+                     << (level + 1)
+                  << std::endl;
+
+            compaction.run(levels);   // your existing compaction engine
+
+            didCompact = true;
+        }
+    }
+
+    if(didCompact){
+
+        // rebuild manifest cleanly from live levels
         manifest.clear();
+
         for(size_t level = 0; level < levels.size(); ++level){
             for(const auto& sstable : levels[level]){
-               std::string path = sstable.getFilePath();
-std::uint64_t size =
-    std::filesystem::file_size(path);
 
-manifest.addSSTable((int)level, path, size);
+                std::string path = sstable.getFilePath();
+                std::uint64_t size =
+                    std::filesystem::file_size(path);
 
+                manifest.addSSTable((int)level, path, size);
             }
         }
+
         manifest.save();
         stats.totalCompactions++;
-        
     }
 }
+
 
 
 void KVStore::printStats() const {

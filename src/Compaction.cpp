@@ -31,7 +31,7 @@ void Compaction::run(std::vector<std::vector<SSTable>>& levels) {
     if (levels[level].size() <= L0_TRIGGER)
         return;
 
-    std::cout << "Compacting L0 -> L1\n";
+    std::cout << "Compacting L0 --- > L1\n";
 
     size_t filesToCompact =
         std::min(COMPACT_BATCH, levels[level].size());
