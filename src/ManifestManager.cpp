@@ -46,10 +46,12 @@ void ManifestManager::load(){
 
 
 void ManifestManager::save() const{
-    std::ofstream out(manifestPath, std::ios::trunc);
-    if(!out.is_open()){
-    return;
-}
+
+    std::string tempPath = manifestPath + ".tmp";
+
+    std::ofstream out(tempPath, std::ios::trunc);
+    if(!out.is_open())
+        return;
 
     for(int level = 0; level < (int)sstableFilesPerLevel.size(); ++level){
         out << "LEVEL:" << level << "\n";
@@ -57,7 +59,12 @@ void ManifestManager::save() const{
             out << file << "\n";
         }
     }
+
+    out.close();
+
+    std::filesystem::rename(tempPath, manifestPath);
 }
+
 std::size_t ManifestManager::levelFileCount(int level) const{
     if(level < 0 || level >= (int)sstableFilesPerLevel.size())
         return 0;

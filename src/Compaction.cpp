@@ -21,64 +21,75 @@ Compaction::Strategy Compaction::getStrategy() const {
 
 void Compaction::run(std::vector<std::vector<SSTable>>& levels) {
 
-    if (levels.empty()) return;
+    for (size_t level = 0; level + 1 < levels.size(); ++level) {
 
-    size_t level = 0;
+        const size_t L0_TRIGGER = 4;
 
-    const size_t L0_TRIGGER = 4;          // compact when >4 files
-    const size_t COMPACT_BATCH = 4;       // compact only 4 files
+        if (level == 0 && levels[0].size() <= L0_TRIGGER)
+            continue;
 
-    if (levels[level].size() <= L0_TRIGGER)
-        return;
+        if (levels[level].empty())
+            continue;
 
-    std::cout << "Compacting L0 --- > L1\n";
+        std::cout << "Compacting Level "
+                  << level
+                  << " -> "
+                  << (level + 1)
+                  << std::endl;
 
-    size_t filesToCompact =
-        std::min(COMPACT_BATCH, levels[level].size());
+        // Move ALL files of this level upward
+        size_t filesToCompact = levels[level].size();
 
-    std::vector<SSTableIterator> iters;
-    iters.reserve(filesToCompact);
+        std::vector<SSTableIterator> iters;
+        iters.reserve(filesToCompact);
 
-    for (size_t i = 0; i < filesToCompact; ++i) {
-        iters.emplace_back(levels[level][i]);
-    }
-
-    std::vector<Iterator*> inputs;
-    inputs.reserve(filesToCompact);
-
-    for (auto& it : iters) {
-        inputs.push_back(&it);
-    }
-
-    MergeIterator merge(inputs);
-
-    std::map<std::string, std::string> mergedData;
-
-    while (merge.valid()) {
-        if (merge.value() != MemTable::TOMBSTONE) {
-            mergedData[merge.key()] = merge.value();
+        for (size_t i = 0; i < filesToCompact; ++i) {
+            iters.emplace_back(levels[level][i]);
         }
-        merge.next();
-    }
 
-    std::string outPath =
-        "data/L1_" + std::to_string(std::time(nullptr)) + ".dat";
+        std::vector<Iterator*> inputs;
+        inputs.reserve(filesToCompact);
 
-    {
+        for (auto& it : iters)
+            inputs.push_back(&it);
+
+        MergeIterator merge(inputs);
+
+        std::string outPath =
+            "data/L" + std::to_string(level + 1) + "_" +
+            std::to_string(std::time(nullptr)) + ".dat";
+
         SSTable writer(outPath, 10000, 3);
-        writer.writeToDisk(mergedData);
+
+        std::map<std::string, std::string> buffer;
+
+        const size_t FLUSH_THRESHOLD = 5000;
+
+        while (merge.valid()) {
+
+            if (merge.value() != MemTable::TOMBSTONE) {
+                buffer[merge.key()] = merge.value();
+            }
+
+            if (buffer.size() >= FLUSH_THRESHOLD) {
+                writer.writeToDisk(buffer);
+                buffer.clear();
+            }
+
+            merge.next();
+        }
+
+        if (!buffer.empty())
+            writer.writeToDisk(buffer);
+
+        SSTable reloaded(outPath, 10000, 3);
+
+        if (levels.size() <= level + 1)
+            levels.resize(level + 2);
+
+        levels[level + 1].push_back(reloaded);
+
+        // Clear old level (safe memory cleanup)
+        levels[level].clear();
     }
-
-    SSTable reloaded(outPath, 10000, 3);
-
-    if (levels.size() < 2)
-        levels.resize(2);
-
-    levels[1].push_back(reloaded);
-
-    // Remove ONLY compacted files
-    levels[0].erase(
-        levels[0].begin(),
-        levels[0].begin() + filesToCompact
-    );
 }
