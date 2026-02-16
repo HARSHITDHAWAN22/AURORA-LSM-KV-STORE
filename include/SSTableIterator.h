@@ -19,6 +19,7 @@ public:
 
 
 private:
+uint64_t dataEnd = 0;
 
     void loadNext();
 
