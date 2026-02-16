@@ -1,19 +1,28 @@
 #include "BloomFilter.h"
 #include <functional>
+#include <fstream>
+#include<bits/stdc++.h>
+#include <cstdint>
+
 
 
 BloomFilter::BloomFilter(size_t bitSize, size_t hashCount)
     : bitSize(bitSize),
       hashCount(hashCount),
-      bitArray(bitSize, false) {}
+      bitArray(bitSize,0) {}
 
 
 void BloomFilter::add(const std::string& key){
     for (size_t i = 0; i < hashCount; ++i) {
-        bitArray[hash(key, i) % bitSize] = true;
+        bitArray[hash(key, i) % bitSize] = 1;
     }
 }
 
+void BloomFilter::serialize(std::ofstream& out) const{
+    uint64_t size = bitArray.size();
+    out.write(reinterpret_cast<const char*>(&size), sizeof(size));
+    out.write(reinterpret_cast<const char*>(bitArray.data()), size);
+}
 
 bool BloomFilter::mightContain(const std::string& key) const{
     for(size_t i = 0; i < hashCount; ++i){

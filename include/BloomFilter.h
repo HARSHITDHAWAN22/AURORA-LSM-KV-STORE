@@ -3,6 +3,8 @@
 
 #include <vector>
 #include <string>
+#include <cstdint>
+
 
 
 // Probabilistic data structure for fast membership checks.
@@ -10,6 +12,9 @@
 class BloomFilter{
 
 public:
+
+void serialize(std::ofstream& out) const;
+
 
     BloomFilter(size_t bitSize, size_t hashCount);
 
@@ -28,7 +33,8 @@ private:
 
     size_t bitSize;
     size_t hashCount;
-    std::vector<bool> bitArray;
+   std::vector<uint8_t> bitArray;
+
 };
 
 #endif

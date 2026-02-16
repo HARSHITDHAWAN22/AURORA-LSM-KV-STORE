@@ -276,37 +276,26 @@ void KVStore::backgroundFlush(){
 
 void KVStore::runCompactionIfNeeded(){
 
-    bool didCompact = false;
+    // Only check L0 for now
+    if (levels[0].size() >= 4) {
 
-    for(int level = 0; level < MAX_LEVELS - 1; ++level){
+        compaction.run(levels);
 
-        if(manifest.levelOverflow(level)){
-
-            std::cout<< "Compacting Level "
-                    << level
-                      << " → "
-                     << (level + 1)
-                  << std::endl;
-
-            compaction.run(levels);   // your existing compaction engine
-
-            didCompact = true;
-        }
-    }
-
-    if(didCompact){
-
-        // rebuild manifest cleanly from live levels
+        // Update manifest after compaction
         manifest.clear();
 
-        for(size_t level = 0; level < levels.size(); ++level){
+        for (size_t level = 0; level < levels.size(); ++level){
             for(const auto& sstable : levels[level]){
 
                 std::string path = sstable.getFilePath();
                 std::uint64_t size =
                     std::filesystem::file_size(path);
 
-                manifest.addSSTable((int)level, path, size);
+                manifest.addSSTable(
+                    static_cast<int>(level),
+                    path,
+                    size
+                );
             }
         }
 
@@ -314,6 +303,7 @@ void KVStore::runCompactionIfNeeded(){
         stats.totalCompactions++;
     }
 }
+
 
 
 
