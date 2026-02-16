@@ -2,6 +2,7 @@
 #include <iostream>
 #include <vector>
 #include <ctime>
+#include <algorithm>
 #include "SSTableIterator.h"
 #include "MergeIterator.h"
 #include "MemTable.h"
@@ -19,85 +20,116 @@ Compaction::Strategy Compaction::getStrategy() const {
     return strategy;
 }
 
-void Compaction::run(std::vector<std::vector<SSTable>>& levels) {
+static bool rangesOverlap(const SSTable& a,
+                          const SSTable& b) {
+    return !(a.getMaxKey() < b.getMinKey() ||
+             b.getMaxKey() < a.getMinKey());
+}
 
-    const size_t L0_BATCH = 4;
-    const size_t HIGHER_BATCH = 1;
+void Compaction::run(std::vector<std::vector<SSTable>>& levels) {
 
     for (size_t level = 0; level + 1 < levels.size(); ++level) {
 
         if (levels[level].empty())
             continue;
 
-        size_t batchSize = (level == 0)
-                           ? std::min(L0_BATCH, levels[level].size())
-                           : std::min(HIGHER_BATCH, levels[level].size());
+        //Pick oldest file (simple + interview safe)
+        SSTable& candidate = levels[level].front();
 
-        if (batchSize == 0)
-            continue;
+        std::vector<size_t> overlapIndexes;
+
+        // Detect overlapping files in next level
+        for (size_t i = 0; i < levels[level + 1].size(); ++i) {
+            if (rangesOverlap(candidate,
+                              levels[level + 1][i])) {
+                overlapIndexes.push_back(i);
+            }
+        }
 
         std::cout << "Compacting Level "
                   << level
                   << " -> "
                   << (level + 1)
+                  << " (overlap files: "
+                  << overlapIndexes.size()
+                  << ")"
                   << std::endl;
 
         std::vector<SSTableIterator> iters;
 
-        // Add batch from current level
-        for (size_t i = 0; i < batchSize; ++i) {
-            iters.emplace_back(levels[level][i]);
-        }
+        // Add candidate from current level
+        iters.emplace_back(candidate);
 
-        // Add all files from next level (simple overlap)
-        for (auto& table : levels[level + 1]) {
-            iters.emplace_back(table);
+        // Add only overlapping files
+        for (size_t idx : overlapIndexes) {
+            iters.emplace_back(levels[level + 1][idx]);
         }
 
         std::vector<Iterator*> inputs;
         for (auto& it : iters)
             inputs.push_back(&it);
 
-       MergeIterator merge(inputs);
+        MergeIterator merge(inputs);
 
-std::vector<std::pair<std::string,std::string>> mergedData;
-mergedData.reserve(1024);  // small reserve to reduce realloc
+        std::vector<std::pair<std::string,std::string>> mergedData;
+        mergedData.reserve(1024);
 
-while (merge.valid()) {
-    if (merge.value() != MemTable::TOMBSTONE) {
-        mergedData.emplace_back(merge.key(), merge.value());
-    }
-    merge.next();
-}
+        while (merge.valid()) {
+            if (merge.value() != MemTable::TOMBSTONE) {
+                mergedData.emplace_back(
+                    merge.key(),
+                    merge.value()
+                );
+            }
+            merge.next();
+        }
 
-std::string outPath =
-    "data/L" + std::to_string(level + 1) + "_" +
-    std::to_string(std::time(nullptr)) + ".dat";
+        if (mergedData.empty()) {
+            // Nothing to write
+            levels[level].erase(levels[level].begin());
+            return;
+        }
 
-// Convert vector → ordered map view for writeToDisk
-std::map<std::string,std::string> ordered;
-for (auto& kv : mergedData) {
-    ordered.emplace(std::move(kv.first), std::move(kv.second));
-}
+        std::string outPath =
+            "data/L" + std::to_string(level + 1) + "_" +
+            std::to_string(std::time(nullptr)) + ".dat";
 
-SSTable writer(outPath, 10000, 3);
-writer.writeToDisk(ordered);
+        std::map<std::string,std::string> ordered;
+        for (auto& kv : mergedData) {
+            ordered.emplace(std::move(kv.first),
+                            std::move(kv.second));
+        }
 
+        SSTable writer(outPath, 10000, 3);
+        writer.writeToDisk(ordered);
 
         SSTable reloaded(outPath, 10000, 3);
 
-        // Remove compacted files from current level
-        levels[level].erase(
-            levels[level].begin(),
-            levels[level].begin() + batchSize
-        );
+        // Remove candidate from current level
+        levels[level].erase(levels[level].begin());
 
-        // Remove all files from next level (overlap replaced)
-        levels[level + 1].clear();
+        //  Remove only overlapping files from next level
+        std::sort(overlapIndexes.rbegin(),
+                  overlapIndexes.rend());
 
-        // Add new compacted file
-        levels[level + 1].push_back(reloaded);
+        for (size_t idx : overlapIndexes) {
+            levels[level + 1].erase(
+                levels[level + 1].begin() + idx
+            );
+        }
 
-        return; // only one compaction per call
+        //  Insert new file in sorted order (L1+ non-overlap)
+        auto& nextLevel = levels[level + 1];
+
+        nextLevel.push_back(reloaded);
+
+        std::sort(nextLevel.begin(),
+                  nextLevel.end(),
+                  [](const SSTable& a,
+                     const SSTable& b) {
+            return a.getMinKey() < b.getMinKey();
+        });
+
+        return; // One compaction per call
     }
 }

@@ -1,0 +1,8 @@
+LEVEL:0
+data/sstables/sstable_6.dat|m|n|51
+data/sstables/sstable_7.dat|x|x|39
+data/sstables/sstable_8.dat|x|x|56
+LEVEL:1
+data/L1_1771226467.dat|aa|zz|118
+LEVEL:2
+LEVEL:3

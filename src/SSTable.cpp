@@ -6,6 +6,9 @@
 
 struct SSTableFooter {
     uint64_t indexOffset;
+    uint64_t minKeyOffset;
+    uint64_t maxKeyOffset;
+    uint64_t fileSize;
     uint64_t magic;
 };
 
@@ -15,29 +18,20 @@ SSTable::SSTable(const std::string& filePath,
     : filePath(filePath),
       bloom(bloomBitSize, bloomHashCount) {
 
-    // If file does not exist, just return (normal for new flush)
     std::ifstream in(filePath, std::ios::binary);
     if (!in.is_open())
         return;
 
-    // Only rebuild bloom if valid SSTable
     if (!isBinarySSTable())
         return;
 
-    // Read footer
-    in.seekg(-static_cast<std::streamoff>(sizeof(SSTableFooter)), std::ios::end);
-    SSTableFooter footer;
-    in.read(reinterpret_cast<char*>(&footer), sizeof(footer));
-
-    if (footer.magic != SSTABLE_MAGIC)
-        return;
-
-    uint64_t dataEnd = footer.indexOffset;
-    in.seekg(0);
+    loadFooterMetadata();
 
     // Rebuild bloom from data section only
+    in.seekg(0);
+
     while (in.good() &&
-           static_cast<uint64_t>(in.tellg()) < dataEnd) {
+           static_cast<uint64_t>(in.tellg()) < fileSize) {
 
         uint32_t k, v;
 
@@ -50,28 +44,45 @@ SSTable::SSTable(const std::string& filePath,
         if (!in.read(reinterpret_cast<char*>(&v), sizeof(v)))
             break;
 
-        // Skip value (no need to load it)
         in.seekg(v, std::ios::cur);
 
         bloom.add(key);
+
+        if (static_cast<uint64_t>(in.tellg()) >= fileSize)
+            break;
     }
 }
 
+void SSTable::loadFooterMetadata() {
 
-void SSTable::appendKV(const std::string& key,
-                       const std::string& value,
-                       std::ofstream& out) {
+    std::ifstream in(filePath, std::ios::binary);
+    if (!in.is_open())
+        return;
 
-    uint32_t keySize = static_cast<uint32_t>(key.size());
-    uint32_t valueSize = static_cast<uint32_t>(value.size());
+    in.seekg(-static_cast<std::streamoff>(sizeof(SSTableFooter)), std::ios::end);
 
-    out.write(reinterpret_cast<const char*>(&keySize), sizeof(keySize));
-    out.write(key.data(), keySize);
+    SSTableFooter footer;
+    in.read(reinterpret_cast<char*>(&footer), sizeof(footer));
 
-    out.write(reinterpret_cast<const char*>(&valueSize), sizeof(valueSize));
-    out.write(value.data(), valueSize);
+    if (footer.magic != SSTABLE_MAGIC)
+        return;
+
+    fileSize = footer.fileSize;
+
+    // Load min key
+    in.seekg(footer.minKeyOffset);
+    uint32_t minSize;
+    in.read(reinterpret_cast<char*>(&minSize), sizeof(minSize));
+    minKey.resize(minSize);
+    in.read(&minKey[0], minSize);
+
+    // Load max key
+    in.seekg(footer.maxKeyOffset);
+    uint32_t maxSize;
+    in.read(reinterpret_cast<char*>(&maxSize), sizeof(maxSize));
+    maxKey.resize(maxSize);
+    in.read(&maxKey[0], maxSize);
 }
-
 
 bool SSTable::isBinarySSTable() const {
     std::ifstream in(filePath, std::ios::binary);
@@ -94,9 +105,7 @@ bool SSTable::isBinarySSTable() const {
 
 bool SSTable::writeToDisk(const std::map<std::string, std::string>& data) {
 
-    // Reset bloom before writing
-   bloom = BloomFilter(10000, 3);   // use same values used in constructor
-
+    bloom = BloomFilter(10000, 3);
 
     std::ofstream out(filePath, std::ios::binary | std::ios::trunc);
     if (!out.is_open())
@@ -105,7 +114,17 @@ bool SSTable::writeToDisk(const std::map<std::string, std::string>& data) {
     constexpr size_t INDEX_INTERVAL = 64;
     sparseIndex.clear();
 
+    std::string localMinKey;
+    std::string localMaxKey;
+    bool first = true;
+
     for (const auto& entry : data) {
+
+        if (first) {
+            localMinKey = entry.first;
+            first = false;
+        }
+        localMaxKey = entry.first;
 
         uint64_t offset = static_cast<uint64_t>(out.tellp());
 
@@ -131,21 +150,47 @@ bool SSTable::writeToDisk(const std::map<std::string, std::string>& data) {
 
     for (const auto& e : sparseIndex) {
         uint32_t k = static_cast<uint32_t>(e.key.size());
-
         out.write(reinterpret_cast<char*>(&k), sizeof(k));
         out.write(e.key.data(), k);
         out.write(reinterpret_cast<const char*>(&e.offset), sizeof(e.offset));
     }
 
-    SSTableFooter footer{ indexOffset, SSTABLE_MAGIC };
+    // Store min key
+    uint64_t minKeyOffset = static_cast<uint64_t>(out.tellp());
+    uint32_t minSize = static_cast<uint32_t>(localMinKey.size());
+    out.write(reinterpret_cast<char*>(&minSize), sizeof(minSize));
+    out.write(localMinKey.data(), minSize);
+
+    // Store max key
+    uint64_t maxKeyOffset = static_cast<uint64_t>(out.tellp());
+    uint32_t maxSize = static_cast<uint32_t>(localMaxKey.size());
+    out.write(reinterpret_cast<char*>(&maxSize), sizeof(maxSize));
+    out.write(localMaxKey.data(), maxSize);
+
+    uint64_t finalSize = static_cast<uint64_t>(out.tellp());
+
+    SSTableFooter footer{
+        indexOffset,
+        minKeyOffset,
+        maxKeyOffset,
+        finalSize,
+        SSTABLE_MAGIC
+    };
+
     out.write(reinterpret_cast<char*>(&footer), sizeof(footer));
 
     out.flush();
+    out.close();
+
     return true;
 }
 
 GetResult SSTable::get(const std::string& key,
                        std::string& value) const {
+
+    if (!minKey.empty() && (key < minKey || key > maxKey))
+        return GetResult::NOT_FOUND;
+
     return getBinary(key, value);
 }
 
@@ -160,6 +205,7 @@ GetResult SSTable::getBinary(const std::string& key,
         return GetResult::NOT_FOUND;
 
     in.seekg(-static_cast<std::streamoff>(sizeof(SSTableFooter)), std::ios::end);
+
     SSTableFooter footer;
     in.read(reinterpret_cast<char*>(&footer), sizeof(footer));
 
@@ -180,10 +226,8 @@ GetResult SSTable::getBinary(const std::string& key,
         uint64_t off;
 
         in.read(reinterpret_cast<char*>(&k), sizeof(k));
-
         std::string ik(k, '\0');
         in.read(&ik[0], k);
-
         in.read(reinterpret_cast<char*>(&off), sizeof(off));
 
         localIndex.emplace_back(ik, off);
