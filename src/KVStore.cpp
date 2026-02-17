@@ -61,7 +61,7 @@ KVStore::KVStore(const std::string& configPath,
     flushThread = std::thread(&KVStore::backgroundFlush, this);
 }
 
-KVStore::~KVStore() {
+KVStore::~KVStore(){
     running = false;
     saveStats();
 
@@ -71,21 +71,21 @@ KVStore::~KVStore() {
     delete memTable;
 }
 
-void KVStore::setCompactionStrategy(const std::string& s) {
+void KVStore::setCompactionStrategy(const std::string& s){
     if (s == "tiering")
         compaction.setStrategy(Compaction::Strategy::TIERED);
     else
         compaction.setStrategy(Compaction::Strategy::LEVEL);
 }
 
-void KVStore::loadFromManifest() {
+void KVStore::loadFromManifest(){
 
     manifest.load();
     auto allLevels = manifest.getLevels();
 
-    for (size_t level = 0; level < allLevels.size(); ++level) {
+    for (size_t level = 0; level < allLevels.size(); ++level){
 
-        for (const auto& meta : allLevels[level]) {
+        for (const auto& meta : allLevels[level]){
 
             SSTable table(
                 meta.filePath,
@@ -100,7 +100,7 @@ void KVStore::loadFromManifest() {
 }
 
 void KVStore::put(const std::string& key,
-                  const std::string& value) {
+                  const std::string& value){
 
     stats.totalPuts++;
 
@@ -112,13 +112,13 @@ void KVStore::put(const std::string& key,
 }
 
 bool KVStore::get(const std::string& key,
-                  std::string& value) {
+                  std::string& value){
 
     stats.totalGets++;
 
     std::string memVal;
 
-    if (memTable->get(key, memVal)) {
+    if(memTable->get(key, memVal)){
         if (memVal == TOMBSTONE)
             return false;
 
@@ -126,22 +126,42 @@ bool KVStore::get(const std::string& key,
         return true;
     }
 
-    for (size_t level = 0; level < levels.size(); ++level) {
+    for(size_t level = 0; level < levels.size(); ++level){
 
         auto& tables = levels[level];
 
         if (level == 0) {
-            for (auto it = tables.rbegin(); it != tables.rend(); ++it) {
+
+            for(auto it = tables.rbegin();
+                 it != tables.rend();
+                 ++it) {
+
                 GetResult res = it->get(key, value);
-                if (res == GetResult::FOUND) return true;
-                if (res == GetResult::DELETED) return false;
+
+                if (res == GetResult::FOUND) {
+                    if (value == TOMBSTONE)
+                        return false;
+                    return true;
+                }
+
+                if (res == GetResult::DELETED)
+                    return false;
             }
         }
         else {
-            for (auto& table : tables) {
+
+            for(auto& table : tables){
+
                 GetResult res = table.get(key, value);
-                if (res == GetResult::FOUND) return true;
-                if (res == GetResult::DELETED) return false;
+
+                if(res == GetResult::FOUND){
+                    if (value == TOMBSTONE)
+                        return false;
+                    return true;
+                }
+
+                if(res == GetResult::DELETED)
+                    return false;
             }
         }
     }
@@ -149,7 +169,7 @@ bool KVStore::get(const std::string& key,
     return false;
 }
 
-void KVStore::deleteKey(const std::string& key) {
+void KVStore::deleteKey(const std::string& key){
 
     wal.logDelete(key);
     memTable->put(key, TOMBSTONE);
@@ -157,6 +177,7 @@ void KVStore::deleteKey(const std::string& key) {
     if (memTable->isFull())
         flushMemTable();
 }
+
 
 void KVStore::flushMemTable() {
 
@@ -223,12 +244,23 @@ void KVStore::backgroundFlush() {
     }
 }
 
-void KVStore::runCompactionIfNeeded() {
+void KVStore::runCompactionIfNeeded(){
 
     if (levels[0].size() >= 4) {
 
+        //Snapshot all current files before compaction
+        std::vector<std::string> oldFiles;
+
+        for (const auto& levelVec : levels) {
+            for (const auto& sstable : levelVec) {
+                oldFiles.push_back(sstable.getFilePath());
+            }
+        }
+
+        // Run compaction (modifies levels in memory)
         compaction.run(levels);
 
+        // Rebuild manifest
         manifest.clear();
 
         for (size_t level = 0; level < levels.size(); ++level) {
@@ -249,7 +281,29 @@ void KVStore::runCompactionIfNeeded() {
             }
         }
 
+        // Save manifest FIRST (atomic install)
         manifest.save();
+
+        // Now delete obsolete files
+        for (const auto& file : oldFiles) {
+
+            bool stillExists = false;
+
+            for(const auto& levelVec : levels) {
+                for(const auto& sstable : levelVec){
+                    if(sstable.getFilePath() == file){
+                        stillExists = true;
+                        break;
+                    }
+                }
+                if(stillExists) break;
+            }
+
+            if(!stillExists) {
+                std::filesystem::remove(file);
+            }
+        }
+
         stats.totalCompactions++;
     }
 }
