@@ -57,10 +57,12 @@ KVStats stats;
 
 
 
+void backgroundCompaction();
 
 
 private:
     ConfigManager configManager;
+std::thread compactionThread;
 
     // POINTER (mutex-safe)
     MemTable* memTable;

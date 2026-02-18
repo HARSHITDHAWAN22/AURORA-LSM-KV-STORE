@@ -59,24 +59,24 @@ KVStore::KVStore(const std::string& configPath,
 
     running = true;
     flushThread = std::thread(&KVStore::backgroundFlush, this);
+    compactionThread = std::thread(&KVStore::backgroundCompaction, this);
+
 }
 
 KVStore::~KVStore(){
+
     running = false;
     saveStats();
 
     if (flushThread.joinable())
         flushThread.join();
 
+    if (compactionThread.joinable())
+        compactionThread.join();
+
     delete memTable;
 }
 
-void KVStore::setCompactionStrategy(const std::string& s){
-    if (s == "tiering")
-        compaction.setStrategy(Compaction::Strategy::TIERED);
-    else
-        compaction.setStrategy(Compaction::Strategy::LEVEL);
-}
 
 void KVStore::loadFromManifest(){
 
@@ -229,7 +229,6 @@ void KVStore::flushMemTable() {
 
     stats.totalFlushes++;
 
-    runCompactionIfNeeded();
 }
 
 void KVStore::flush(){
@@ -284,6 +283,10 @@ stats.totalCompactionBytes += bytes;
             }
         }
 
+
+        
+
+
         manifest.save();
 
         // Delete obsolete files
@@ -310,7 +313,14 @@ stats.totalCompactionBytes += bytes;
         return; // only one compaction per call
     }
 }
+void KVStore::backgroundCompaction(){
 
+            while(running){
+
+        std::this_thread::sleep_for(std::chrono::seconds(3));
+
+        runCompactionIfNeeded();
+    } }
 
 void KVStore::printStats() const{
 
