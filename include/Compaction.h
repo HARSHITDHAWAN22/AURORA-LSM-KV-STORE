@@ -23,7 +23,9 @@ Strategy getStrategy() const;
 
 
     // Run compaction on current SSTables, returns bytes written
-    void run(std::vector<std::vector<SSTable>>& levels);
+    
+    uint64_t run(std::vector<std::vector<SSTable>>& levels);
+
 
 private:
 static constexpr size_t L0_THRESHOLD = 3;

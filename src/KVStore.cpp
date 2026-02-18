@@ -260,7 +260,9 @@ void KVStore::runCompactionIfNeeded(){
             }
         }
 
-        compaction.run(levels);
+        uint64_t bytes = compaction.run(levels);
+stats.totalCompactionBytes += bytes;
+
 
         manifest.clear();
 

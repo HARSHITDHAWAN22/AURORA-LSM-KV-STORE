@@ -26,7 +26,7 @@ static bool rangesOverlap(const SSTable& a,
              b.getMaxKey() < a.getMinKey());
 }
 
-void Compaction::run(std::vector<std::vector<SSTable>>& levels) {
+uint64_t Compaction::run(std::vector<std::vector<SSTable>>& levels){
 
     for (size_t level = 0; level + 1 < levels.size(); ++level) {
 
@@ -87,7 +87,7 @@ void Compaction::run(std::vector<std::vector<SSTable>>& levels) {
         if (mergedData.empty()) {
             // Nothing to write
             levels[level].erase(levels[level].begin());
-            return;
+            return 0;
         }
 
         std::string outPath =
@@ -104,6 +104,8 @@ void Compaction::run(std::vector<std::vector<SSTable>>& levels) {
         writer.writeToDisk(ordered);
 
         SSTable reloaded(outPath, 10000, 3);
+        uint64_t compactionBytes = reloaded.getFileSize();
+
 
         // Remove candidate from current level
         levels[level].erase(levels[level].begin());
@@ -126,10 +128,13 @@ void Compaction::run(std::vector<std::vector<SSTable>>& levels) {
         std::sort(nextLevel.begin(),
                   nextLevel.end(),
                   [](const SSTable& a,
-                     const SSTable& b) {
+                     const SSTable& b){
             return a.getMinKey() < b.getMinKey();
         });
 
-        return; // One compaction per call
+        return compactionBytes;
+ // One compaction per call
     }
+    return 0;
+
 }
