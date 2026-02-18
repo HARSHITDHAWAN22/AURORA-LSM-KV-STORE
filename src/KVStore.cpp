@@ -116,9 +116,11 @@ bool KVStore::get(const std::string& key,
 
     stats.totalGets++;
 
+    uint64_t tablesChecked = 0;
+
     std::string memVal;
 
-    if(memTable->get(key, memVal)){
+    if (memTable->get(key, memVal)) {
         if (memVal == TOMBSTONE)
             return false;
 
@@ -126,46 +128,53 @@ bool KVStore::get(const std::string& key,
         return true;
     }
 
-    for(size_t level = 0; level < levels.size(); ++level){
+    for (size_t level = 0; level < levels.size(); ++level) {
 
         auto& tables = levels[level];
 
         if (level == 0) {
 
-            for(auto it = tables.rbegin();
+            for (auto it = tables.rbegin();
                  it != tables.rend();
                  ++it) {
+
+                tablesChecked++;
 
                 GetResult res = it->get(key, value);
 
                 if (res == GetResult::FOUND) {
-                    if (value == TOMBSTONE)
-                        return false;
+                    stats.totalReadSSTables += tablesChecked;
                     return true;
                 }
 
-                if (res == GetResult::DELETED)
+                if (res == GetResult::DELETED) {
+                    stats.totalReadSSTables += tablesChecked;
                     return false;
+                }
             }
         }
         else {
 
-            for(auto& table : tables){
+            for (auto& table : tables) {
+
+                tablesChecked++;
 
                 GetResult res = table.get(key, value);
 
-                if(res == GetResult::FOUND){
-                    if (value == TOMBSTONE)
-                        return false;
+                if (res == GetResult::FOUND) {
+                    stats.totalReadSSTables += tablesChecked;
                     return true;
                 }
 
-                if(res == GetResult::DELETED)
+                if (res == GetResult::DELETED) {
+                    stats.totalReadSSTables += tablesChecked;
                     return false;
+                }
             }
         }
     }
 
+    stats.totalReadSSTables += tablesChecked;
     return false;
 }
 
@@ -345,6 +354,20 @@ void KVStore::printStats() const{
 
         std::cout << "Write Amplification : " << wa << "\n";
     }
+
+
+    std::cout << "Total Read SSTables : "
+          << stats.totalReadSSTables << "\n";
+
+if (stats.totalGets > 0) {
+    double ra =
+        (double)stats.totalReadSSTables /
+        (double)stats.totalGets;
+
+    std::cout << "Read Amplification  : "
+              << ra << "\n";
+}
+
 
     std::cout << "========================\n";
 }

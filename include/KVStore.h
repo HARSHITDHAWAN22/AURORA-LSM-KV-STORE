@@ -17,6 +17,8 @@
 const int MAX_LEVELS = 4;
 
 struct KVStats{
+    uint64_t totalReadSSTables = 0;
+
     size_t totalPuts = 0;
     size_t totalGets = 0;
     size_t totalFlushes = 0;
