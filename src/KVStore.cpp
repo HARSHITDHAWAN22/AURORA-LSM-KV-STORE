@@ -232,12 +232,12 @@ void KVStore::flushMemTable() {
     runCompactionIfNeeded();
 }
 
-void KVStore::flush() {
+void KVStore::flush(){
     if (!memTable->isEmpty())
         flushMemTable();
 }
 
-void KVStore::backgroundFlush() {
+void KVStore::backgroundFlush(){
     while (running) {
         std::this_thread::sleep_for(std::chrono::seconds(2));
         flushMemTable();
@@ -246,9 +246,12 @@ void KVStore::backgroundFlush() {
 
 void KVStore::runCompactionIfNeeded(){
 
-    if (levels[0].size() >= 4) {
+    for (size_t level = 0; level < levels.size() - 1; ++level) {
 
-        //Snapshot all current files before compaction
+        if (!manifest.levelOverflow(static_cast<int>(level)))
+            continue;
+
+        // Snapshot old files
         std::vector<std::string> oldFiles;
 
         for (const auto& levelVec : levels) {
@@ -257,15 +260,13 @@ void KVStore::runCompactionIfNeeded(){
             }
         }
 
-        // Run compaction (modifies levels in memory)
         compaction.run(levels);
 
-        // Rebuild manifest
         manifest.clear();
 
-        for (size_t level = 0; level < levels.size(); ++level) {
+        for (size_t lvl = 0; lvl < levels.size(); ++lvl) {
 
-            for (const auto& sstable : levels[level]) {
+            for (const auto& sstable : levels[lvl]) {
 
                 SSTableMeta meta(
                     sstable.getFilePath(),
@@ -275,40 +276,41 @@ void KVStore::runCompactionIfNeeded(){
                 );
 
                 manifest.addSSTable(
-                    static_cast<int>(level),
+                    static_cast<int>(lvl),
                     meta
                 );
             }
         }
 
-        // Save manifest FIRST (atomic install)
         manifest.save();
 
-        // Now delete obsolete files
+        // Delete obsolete files
         for (const auto& file : oldFiles) {
 
             bool stillExists = false;
 
-            for(const auto& levelVec : levels) {
+            for(const auto& levelVec : levels){
                 for(const auto& sstable : levelVec){
                     if(sstable.getFilePath() == file){
                         stillExists = true;
                         break;
                     }
                 }
-                if(stillExists) break;
+                if (stillExists) break;
             }
 
-            if(!stillExists) {
+            if (!stillExists)
                 std::filesystem::remove(file);
-            }
         }
 
         stats.totalCompactions++;
+
+        return; // only one compaction per call
     }
 }
 
-void KVStore::printStats() const {
+
+void KVStore::printStats() const{
 
     std::cout << "==== AuroraKV Stats ====\n";
     std::cout << "Total PUTs        : " << stats.totalPuts << "\n";
