@@ -14,6 +14,9 @@
 #include "ManifestManager.h"
 #include "WAL.h"
 
+#include <chrono>
+
+
 const int MAX_LEVELS = 4;
 
 struct KVStats{
@@ -25,6 +28,8 @@ struct KVStats{
     size_t totalCompactions = 0;
     size_t totalBytesWritten = 0;
     size_t totalCompactionBytes = 0;
+    
+
 };
 
 class KVStore{
@@ -53,7 +58,7 @@ private:
     void loadFromManifest();
     void runCompactionIfNeeded();
     void backgroundFlush();
-
+std::chrono::steady_clock::time_point lastCompactionTime;
     // ---- statistics ----
 KVStats stats;
 

@@ -60,6 +60,8 @@ KVStore::KVStore(const std::string& configPath,
     running = true;
     flushThread = std::thread(&KVStore::backgroundFlush, this);
     compactionThread = std::thread(&KVStore::backgroundCompaction, this);
+    lastCompactionTime = std::chrono::steady_clock::now();
+
 
 }
 
@@ -256,7 +258,9 @@ void KVStore::runCompactionIfNeeded(){
 
     for (size_t level = 0; level < levels.size() - 1; ++level) {
 
-        if (!manifest.levelOverflow(static_cast<int>(level)))
+       if (levels[level].size() <= 4)
+    continue;
+
             continue;
 
         // Snapshot old files
@@ -324,12 +328,31 @@ stats.totalCompactionBytes += bytes;
 }
 void KVStore::backgroundCompaction(){
 
-            while(running){
+    const int COMPACTION_INTERVAL_SEC = 5;
 
-        std::this_thread::sleep_for(std::chrono::seconds(3));
+    while (running) {
+
+        std::this_thread::sleep_for(
+            std::chrono::seconds(2)
+        );
+
+        auto now = std::chrono::steady_clock::now();
+
+        auto elapsed =
+            std::chrono::duration_cast<std::chrono::seconds>(
+                now - lastCompactionTime
+            ).count();
+
+        if (elapsed < COMPACTION_INTERVAL_SEC)
+            continue;
 
         runCompactionIfNeeded();
-    } }
+
+        lastCompactionTime =
+            std::chrono::steady_clock::now();
+    }
+}
+
 
 void KVStore::printStats() const{
 
