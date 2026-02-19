@@ -344,6 +344,24 @@ void KVStore::printStats() const{
         total += level.size();
 
     std::cout << "SSTable Count     : " << total << "\n";
+    std::cout << "\n--- Level Distribution ---\n";
+
+for(size_t level = 0; level < levels.size(); ++level){
+
+    uint64_t levelBytes = 0;
+
+    for (const auto& sstable : levels[level]) {
+        levelBytes += sstable.getFileSize();
+    }
+
+    std::cout << "Level " << level
+              << " : "
+              << levels[level].size()
+              << " files | "
+              << levelBytes
+              << " bytes\n";
+}
+
     std::cout << "Bytes Written     : " << stats.totalBytesWritten << "\n";
     std::cout << "Compaction Bytes  : " << stats.totalCompactionBytes << "\n";
 
