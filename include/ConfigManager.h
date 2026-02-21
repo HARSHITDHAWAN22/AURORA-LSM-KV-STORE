@@ -10,6 +10,7 @@ public:
     // Load configuration from JSON file
     bool load();
 
+
     // Getters
     int getMemTableMaxEntries() const;
     int getBloomFilterBitSize() const;
@@ -17,6 +18,12 @@ public:
     int getMaxFilesPerLevel() const;
     std::string getSSTableDirectory() const;
 
+    int getCompactionInterval() const;
+    int getL0Threshold() const;
+    int getFlushInterval() const;
+
+
+    
 private:
     std::string configFilePath;
 
@@ -26,6 +33,10 @@ private:
     int bloomFilterHashCount;
     int maxFilesPerLevel;
     std::string sstableDirectory;
+
+    int compactionIntervalSeconds;
+    int l0Threshold;
+    int flushIntervalSeconds;
 };
 
 #endif

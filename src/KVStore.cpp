@@ -249,7 +249,11 @@ void KVStore::flush(){
 
 void KVStore::backgroundFlush(){
     while (running) {
-        std::this_thread::sleep_for(std::chrono::seconds(2));
+        std::this_thread::sleep_for(
+    std::chrono::seconds(
+        configManager.getFlushInterval()
+    )
+);
         flushMemTable();
     }
 }
@@ -258,11 +262,9 @@ void KVStore::runCompactionIfNeeded(){
 
     for (size_t level = 0; level < levels.size() - 1; ++level) {
 
-       if (levels[level].size() <= 4)
+       if (levels[level].size() <=
+    static_cast<size_t>(configManager.getL0Threshold()))
     continue;
-
-            continue;
-
         // Snapshot old files
         std::vector<std::string> oldFiles;
 
@@ -328,13 +330,15 @@ stats.totalCompactionBytes += bytes;
 }
 void KVStore::backgroundCompaction(){
 
-    const int COMPACTION_INTERVAL_SEC = 5;
+    int COMPACTION_INTERVAL_SEC =
+    configManager.getCompactionInterval();
 
     while (running) {
-
-        std::this_thread::sleep_for(
-            std::chrono::seconds(2)
-        );
+std::this_thread::sleep_for(
+    std::chrono::seconds(
+        configManager.getCompactionInterval()
+    )
+);
 
         auto now = std::chrono::steady_clock::now();
 

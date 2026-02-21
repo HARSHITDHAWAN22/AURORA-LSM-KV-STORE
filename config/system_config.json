@@ -1,11 +1,9 @@
 {
-    
   "storage":{
-    "memtable": {
+    "memtable":{
       "max_entries": 5000
     },
-    
-    "sstable": {
+    "sstable":{
       "data_directory": "data/sstables"
     }
   },
@@ -17,6 +15,12 @@
 
   "compaction":{
     "strategy": "level",
-    "max_files_per_level": 4
+    "max_files_per_level": 4,
+    "interval_seconds": 5,
+    "l0_threshold": 4
+  },
+
+  "flush":{
+    "interval_seconds": 2
   }
 }
