@@ -1,0 +1,26 @@
+Sun Feb 22 02:11:06 2026
+ [INFO] Starting AuroraKV shell with strategy: leveling
+Sun Feb 22 02:11:06 2026
+ [INFO] WAL initialized at path: metadata/wal.log
+Sun Feb 22 02:11:06 2026
+ [INFO] ManifestManager initialized at path: metadata/manifest.txt
+Sun Feb 22 02:11:06 2026
+ [INFO] MemTable initialized with maxEntries=5000
+Sun Feb 22 02:11:06 2026
+ [INFO] WAL replay completed
+Sun Feb 22 02:11:06 2026
+ [INFO] Background flush thread started
+Sun Feb 22 02:11:06 2026
+ [INFO] Background compaction thread started
+Sun Feb 22 02:11:58 2026
+ [INFO] MemTable flushed to L0
+Sun Feb 22 02:12:11 2026
+ [INFO] MemTable flushed to L0
+Sun Feb 22 02:12:11 2026
+ [INFO] Manual flush triggered
+Sun Feb 22 02:12:24 2026
+ [INFO] MemTable flushed to L0
+Sun Feb 22 02:12:24 2026
+ [INFO] Shell exited normally
+Sun Feb 22 02:12:24 2026
+ [INFO] KVStore shutting down

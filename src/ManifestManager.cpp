@@ -1,4 +1,6 @@
 #include "ManifestManager.h"
+#include "Logger.h"
+
 #include <fstream>
 #include <filesystem>
 #include <sstream>
@@ -8,13 +10,18 @@ ManifestManager::ManifestManager(const std::string& manifestPath)
 
     levels.resize(4);   // MAX_LEVELS
     levelBytes.resize(4, 0ULL);
+
+    LOG_INFO("ManifestManager initialized at path: " + manifestPath);
 }
 
 void ManifestManager::load() {
 
     std::ifstream in(manifestPath);
-    if (!in.is_open())
+
+    if (!in.is_open()) {
+        LOG_DEBUG("Manifest load skipped: file not found");
         return;
+    }
 
     levels.clear();
     levels.resize(4);
@@ -42,6 +49,11 @@ void ManifestManager::load() {
             std::getline(ss, maxK, '|');
             std::getline(ss, sizeStr, '|');
 
+            if (path.empty() || sizeStr.empty()) {
+                LOG_ERROR("Manifest load error: corrupted line detected");
+                continue;
+            }
+
             std::uint64_t fileSize = std::stoull(sizeStr);
 
             SSTableMeta meta(path, minK, maxK, fileSize);
@@ -50,6 +62,8 @@ void ManifestManager::load() {
             levelBytes[currentLevel] += fileSize;
         }
     }
+
+    LOG_INFO("Manifest loaded successfully");
 }
 
 void ManifestManager::save() const {
@@ -57,8 +71,11 @@ void ManifestManager::save() const {
     std::string tempPath = manifestPath + ".tmp";
 
     std::ofstream out(tempPath, std::ios::trunc);
-    if (!out.is_open())
+
+    if (!out.is_open()) {
+        LOG_ERROR("Manifest save failed: unable to open temp file");
         return;
+    }
 
     for (int level = 0; level < (int)levels.size(); ++level) {
 
@@ -74,17 +91,29 @@ void ManifestManager::save() const {
 
     out.close();
 
-    std::filesystem::rename(tempPath, manifestPath);
+    std::error_code ec;
+    std::filesystem::rename(tempPath, manifestPath, ec);
+
+    if (ec) {
+        LOG_ERROR("Manifest rename failed: " + ec.message());
+        return;
+    }
+
+    LOG_DEBUG("Manifest saved successfully");
 }
 
 void ManifestManager::addSSTable(int level,
                                  const SSTableMeta& meta) {
 
-    if (level < 0 || level >= (int)levels.size())
+    if (level < 0 || level >= (int)levels.size()) {
+        LOG_ERROR("Manifest addSSTable: invalid level");
         return;
+    }
 
     levels[level].push_back(meta);
     levelBytes[level] += meta.fileSize;
+
+    LOG_DEBUG("SSTable added to manifest at level " + std::to_string(level));
 }
 
 void ManifestManager::removeSSTable(const std::string& filePath) {
@@ -98,6 +127,8 @@ void ManifestManager::removeSSTable(const std::string& filePath) {
             if (it->filePath == filePath) {
                 levelBytes[level] -= it->fileSize;
                 vec.erase(it);
+
+                LOG_DEBUG("SSTable removed from manifest: " + filePath);
                 return;
             }
         }
@@ -158,4 +189,6 @@ void ManifestManager::clear() {
     std::fill(levelBytes.begin(),
               levelBytes.end(),
               0ULL);
+
+    LOG_DEBUG("Manifest cleared");
 }

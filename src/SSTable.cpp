@@ -1,7 +1,8 @@
 #include "SSTable.h"
+#include "Logger.h"
+
 #include <fstream>
 #include <vector>
-#include <iostream>
 #include "MemTable.h"
 
 struct SSTableFooter {
@@ -22,12 +23,13 @@ SSTable::SSTable(const std::string& filePath,
     if (!in.is_open())
         return;
 
-    if (!isBinarySSTable())
+    if (!isBinarySSTable()) {
+        LOG_ERROR("Invalid SSTable format: " + filePath);
         return;
+    }
 
     loadFooterMetadata();
 
-    // Rebuild bloom from data section only
     in.seekg(0);
 
     while (in.good() &&
@@ -64,19 +66,19 @@ void SSTable::loadFooterMetadata() {
     SSTableFooter footer;
     in.read(reinterpret_cast<char*>(&footer), sizeof(footer));
 
-    if (footer.magic != SSTABLE_MAGIC)
+    if (footer.magic != SSTABLE_MAGIC) {
+        LOG_ERROR("SSTable footer magic mismatch: " + filePath);
         return;
+    }
 
     fileSize = footer.fileSize;
 
-    // Load min key
     in.seekg(footer.minKeyOffset);
     uint32_t minSize;
     in.read(reinterpret_cast<char*>(&minSize), sizeof(minSize));
     minKey.resize(minSize);
     in.read(&minKey[0], minSize);
 
-    // Load max key
     in.seekg(footer.maxKeyOffset);
     uint32_t maxSize;
     in.read(reinterpret_cast<char*>(&maxSize), sizeof(maxSize));
@@ -85,6 +87,7 @@ void SSTable::loadFooterMetadata() {
 }
 
 bool SSTable::isBinarySSTable() const {
+
     std::ifstream in(filePath, std::ios::binary);
     if (!in.is_open())
         return false;
@@ -108,8 +111,10 @@ bool SSTable::writeToDisk(const std::map<std::string, std::string>& data) {
     bloom = BloomFilter(10000, 3);
 
     std::ofstream out(filePath, std::ios::binary | std::ios::trunc);
-    if (!out.is_open())
+    if (!out.is_open()) {
+        LOG_ERROR("Failed to create SSTable: " + filePath);
         return false;
+    }
 
     constexpr size_t INDEX_INTERVAL = 64;
     sparseIndex.clear();
@@ -155,13 +160,11 @@ bool SSTable::writeToDisk(const std::map<std::string, std::string>& data) {
         out.write(reinterpret_cast<const char*>(&e.offset), sizeof(e.offset));
     }
 
-    // Store min key
     uint64_t minKeyOffset = static_cast<uint64_t>(out.tellp());
     uint32_t minSize = static_cast<uint32_t>(localMinKey.size());
     out.write(reinterpret_cast<char*>(&minSize), sizeof(minSize));
     out.write(localMinKey.data(), minSize);
 
-    // Store max key
     uint64_t maxKeyOffset = static_cast<uint64_t>(out.tellp());
     uint32_t maxSize = static_cast<uint32_t>(localMaxKey.size());
     out.write(reinterpret_cast<char*>(&maxSize), sizeof(maxSize));
