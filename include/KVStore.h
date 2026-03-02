@@ -28,6 +28,10 @@ struct KVStats{
     size_t totalCompactions = 0;
     size_t totalBytesWritten = 0;
     size_t totalCompactionBytes = 0;
+
+    uint64_t bloomChecks = 0;
+uint64_t bloomNegatives = 0;
+uint64_t bloomFalsePositives = 0;
     
 
 };

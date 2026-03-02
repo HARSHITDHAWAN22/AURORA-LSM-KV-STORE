@@ -200,8 +200,12 @@ GetResult SSTable::get(const std::string& key,
 GetResult SSTable::getBinary(const std::string& key,
                              std::string& value) const {
 
-    if (!bloom.mightContain(key))
-        return GetResult::NOT_FOUND;
+    statsCallback->recordBloomCheck();
+
+if (!bloom.mightContain(key)) {
+    statsCallback->recordBloomNegative();
+    return GetResult::NOT_FOUND;
+}
 
     std::ifstream in(filePath, std::ios::binary);
     if (!in.is_open())

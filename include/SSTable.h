@@ -43,6 +43,12 @@ public:
     const std::string& getMaxKey() const { return maxKey; }
     uint64_t getFileSize() const { return fileSize; }
 
+    SSTableStatsHook* statsHook = nullptr;
+
+void setStatsHook(SSTableStatsHook* hook) {
+    statsHook = hook;
+}
+
 private:
     std::string filePath;
 
@@ -63,5 +69,11 @@ private:
     // NEW
     void loadFooterMetadata();
 };
-
+class SSTableStatsHook {
+public:
+    virtual void recordBloomCheck() = 0;
+    virtual void recordBloomNegative() = 0;
+    virtual void recordBloomFalsePositive() = 0;
+    virtual ~SSTableStatsHook() = default;
+};
 #endif // SSTABLE_H
