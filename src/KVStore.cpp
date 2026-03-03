@@ -177,6 +177,7 @@ bool KVStore::get(const std::string& key,
         }
     }
 
+    sstable.setStatsHook(this);
     stats.totalReadSSTables += tablesChecked;
     return false;
 }
@@ -360,6 +361,19 @@ void KVStore::printStats() const{
     std::cout << "Total GETs        : " << stats.totalGets << "\n";
     std::cout << "Total Flushes     : " << stats.totalFlushes << "\n";
     std::cout << "Total Compactions : " << stats.totalCompactions << "\n";
+
+    std::cout << "Bloom Checks       : " << stats.bloomChecks << "\n";
+std::cout << "Bloom Negatives    : " << stats.bloomNegatives << "\n";
+std::cout << "Bloom False Pos    : " << stats.bloomFalsePositives << "\n";
+
+if (stats.bloomChecks > 0) {
+    double fpRate =
+        (double)stats.bloomFalsePositives /
+        (double)stats.bloomChecks;
+
+    std::cout << "Bloom FP Rate      : "
+              << fpRate << "\n";
+}
 
     size_t total = 0;
     for (const auto& level : levels)

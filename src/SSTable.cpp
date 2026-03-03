@@ -281,6 +281,9 @@ if (!bloom.mightContain(key)) {
             break;
     }
 
+        if (statsHook)
+        statsHook->recordBloomFalsePositive();
+
     return GetResult::NOT_FOUND;
 }
 

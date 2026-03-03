@@ -95,4 +95,19 @@ std::thread compactionThread;
     std::mutex flushMutex;
 };
 
+class KVStore : public SSTableStatsHook {
+    void recordBloomCheck() override {
+    stats.bloomChecks++;
+}
+
+void recordBloomNegative() override {
+    stats.bloomNegatives++;
+}
+
+void recordBloomFalsePositive() override {
+    stats.bloomFalsePositives++;
+}
+};
+
+
 #endif
