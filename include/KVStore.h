@@ -6,6 +6,7 @@
 #include <thread>
 #include <atomic>
 #include <mutex>
+#include <chrono>
 
 #include "ConfigManager.h"
 #include "MemTable.h"
@@ -13,9 +14,6 @@
 #include "Compaction.h"
 #include "ManifestManager.h"
 #include "WAL.h"
-
-#include <chrono>
-
 
 const int MAX_LEVELS = 4;
 
@@ -30,15 +28,13 @@ struct KVStats{
     size_t totalCompactionBytes = 0;
 
     uint64_t bloomChecks = 0;
-uint64_t bloomNegatives = 0;
-uint64_t bloomFalsePositives = 0;
-    
-
+    uint64_t bloomNegatives = 0;
+    uint64_t bloomFalsePositives = 0;
 };
 
-class KVStore{
+class KVStore : public SSTableStatsHook {
 public:
-    // MUST MATCH CPP
+
     explicit KVStore(const std::string& configPath,
                      const std::string& strategy);
 
@@ -47,67 +43,63 @@ public:
     void put(const std::string& key,const std::string& value);
     bool get(const std::string& key,std::string& value);
     void deleteKey(const std::string& key);
- void setCompactionStrategy(const std::string& s);
-// void KVStore::setCompactionStrategy(const std::string& s);
+
+    void setCompactionStrategy(const std::string& s);
 
     void flush();
     void scan(const std::string& start,const std::string& end);
-void loadStats();
-void saveStats() const;
 
-void printStats() const;
+    void loadStats();
+    void saveStats() const;
+
+    void printStats() const;
+
+    // ---- Bloom filter hook functions ----
+    void recordBloomCheck() override {
+        stats.bloomChecks++;
+    }
+
+    void recordBloomNegative() override {
+        stats.bloomNegatives++;
+    }
+
+    void recordBloomFalsePositive() override {
+        stats.bloomFalsePositives++;
+    }
 
 private:
+
     void flushMemTable();
     void loadFromManifest();
     void runCompactionIfNeeded();
     void backgroundFlush();
-std::chrono::steady_clock::time_point lastCompactionTime;
+    void backgroundCompaction();
+    void sortSSTablesByAge();
+
+    std::chrono::steady_clock::time_point lastCompactionTime;
+
     // ---- statistics ----
-KVStats stats;
+    KVStats stats;
 
-
-
-void backgroundCompaction();
-
-
-private:
     ConfigManager configManager;
-std::thread compactionThread;
 
-    // POINTER (mutex-safe)
     MemTable* memTable;
 
     WAL wal;
-    std::vector<std::vector<SSTable>>levels;
-    static constexpr int MAX_LEVELS = 4;
-    
 
+    std::vector<std::vector<SSTable>> levels;
 
     Compaction compaction;
     ManifestManager manifest;
 
     int sstableCounter;
-     void sortSSTablesByAge(); 
 
     std::thread flushThread;
+    std::thread compactionThread;
+
     std::atomic<bool> running;
+
     std::mutex flushMutex;
 };
-
-class KVStore : public SSTableStatsHook {
-    void recordBloomCheck() override {
-    stats.bloomChecks++;
-}
-
-void recordBloomNegative() override {
-    stats.bloomNegatives++;
-}
-
-void recordBloomFalsePositive() override {
-    stats.bloomFalsePositives++;
-}
-};
-
 
 #endif

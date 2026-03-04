@@ -200,10 +200,12 @@ GetResult SSTable::get(const std::string& key,
 GetResult SSTable::getBinary(const std::string& key,
                              std::string& value) const {
 
-    statsCallback->recordBloomCheck();
+   if(statsHook)
+    statsHook->recordBloomCheck();
 
 if (!bloom.mightContain(key)) {
-    statsCallback->recordBloomNegative();
+    if(statsHook)
+    statsHook->recordBloomNegative();
     return GetResult::NOT_FOUND;
 }
 
@@ -277,16 +279,16 @@ if (!bloom.mightContain(key)) {
             return GetResult::FOUND;
         }
 
-        if (curKey > key)
+        if(curKey > key)
             break;
     }
 
-        if (statsHook)
-        statsHook->recordBloomFalsePositive();
+        if(statsHook){
+        statsHook->recordBloomFalsePositive();}
 
     return GetResult::NOT_FOUND;
 }
 
-const std::string& SSTable::getFilePath() const {
+const std::string& SSTable::getFilePath() const{
     return filePath;
 }

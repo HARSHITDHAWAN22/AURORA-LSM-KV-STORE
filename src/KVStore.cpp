@@ -1,7 +1,6 @@
 #include "KVStore.h"
 #include <iostream>
 #include <fstream>
-#include <unordered_set>
 #include <chrono>
 #include <thread>
 #include <algorithm>
@@ -36,8 +35,7 @@ KVStore::KVStore(const std::string& configPath,
           strategy == "tiering"
               ? Compaction::Strategy::TIERED
               : Compaction::Strategy::LEVEL,
-          0
-      ),
+          0),
       manifest("metadata/manifest.txt"),
       sstableCounter(0),
       running(false)
@@ -64,9 +62,6 @@ KVStore::KVStore(const std::string& configPath,
     flushThread = std::thread(&KVStore::backgroundFlush, this);
     compactionThread = std::thread(&KVStore::backgroundCompaction, this);
 
-    LOG_INFO("Background flush thread started");
-    LOG_INFO("Background compaction thread started");
-
     lastCompactionTime = std::chrono::steady_clock::now();
 }
 
@@ -76,8 +71,6 @@ KVStore::~KVStore(){
     running = false;
 
     saveStats();
-
-    LOG_DEBUG("Stopping background threads");
 
     if (flushThread.joinable())
         flushThread.join();
@@ -114,6 +107,7 @@ void KVStore::put(const std::string& key,
     stats.totalPuts++;
 
     wal.logPut(key, value);
+
     memTable->put(key, value);
 
     if (memTable->isFull())
@@ -123,12 +117,15 @@ void KVStore::put(const std::string& key,
 bool KVStore::get(const std::string& key,
                   std::string& value){
 
+    value.clear();
     stats.totalGets++;
+
     uint64_t tablesChecked = 0;
     std::string memVal;
 
     if (memTable->get(key, memVal)) {
-        if (memVal == TOMBSTONE)
+
+        if (memVal == MemTable::TOMBSTONE)
             return false;
 
         value = memVal;
@@ -140,6 +137,7 @@ bool KVStore::get(const std::string& key,
         auto& tables = levels[level];
 
         if (level == 0) {
+
             for (auto it = tables.rbegin(); it != tables.rend(); ++it) {
 
                 tablesChecked++;
@@ -156,8 +154,9 @@ bool KVStore::get(const std::string& key,
                     return false;
                 }
             }
-        }
-        else {
+
+        } else {
+
             for (auto& table : tables) {
 
                 tablesChecked++;
@@ -177,7 +176,6 @@ bool KVStore::get(const std::string& key,
         }
     }
 
-    sstable.setStatsHook(this);
     stats.totalReadSSTables += tablesChecked;
     return false;
 }
@@ -185,7 +183,8 @@ bool KVStore::get(const std::string& key,
 void KVStore::deleteKey(const std::string& key){
 
     wal.logDelete(key);
-    memTable->put(key, TOMBSTONE);
+
+    memTable->put(key, MemTable::TOMBSTONE);
 
     if (memTable->isFull())
         flushMemTable();
@@ -211,7 +210,7 @@ void KVStore::flushMemTable() {
     bool flushSuccess = sstable.writeToDisk(memTable->getData());
 
     if (!flushSuccess) {
-        LOG_ERROR("Flush failed, WAL not cleared");
+        LOG_ERROR("Flush failed");
         return;
     }
 
@@ -250,7 +249,9 @@ void KVStore::flush(){
 }
 
 void KVStore::backgroundFlush(){
+
     while (running) {
+
         std::this_thread::sleep_for(
             std::chrono::seconds(
                 configManager.getFlushInterval()
@@ -326,9 +327,6 @@ void KVStore::runCompactionIfNeeded(){
 
 void KVStore::backgroundCompaction(){
 
-    int COMPACTION_INTERVAL_SEC =
-        configManager.getCompactionInterval();
-
     while(running){
 
         std::this_thread::sleep_for(
@@ -336,16 +334,6 @@ void KVStore::backgroundCompaction(){
                 configManager.getCompactionInterval()
             )
         );
-
-        auto now = std::chrono::steady_clock::now();
-
-        auto elapsed =
-            std::chrono::duration_cast<std::chrono::seconds>(
-                now - lastCompactionTime
-            ).count();
-
-        if (elapsed < COMPACTION_INTERVAL_SEC)
-            continue;
 
         runCompactionIfNeeded();
 
@@ -363,62 +351,23 @@ void KVStore::printStats() const{
     std::cout << "Total Compactions : " << stats.totalCompactions << "\n";
 
     std::cout << "Bloom Checks       : " << stats.bloomChecks << "\n";
-std::cout << "Bloom Negatives    : " << stats.bloomNegatives << "\n";
-std::cout << "Bloom False Pos    : " << stats.bloomFalsePositives << "\n";
+    std::cout << "Bloom Negatives    : " << stats.bloomNegatives << "\n";
+    std::cout << "Bloom False Pos    : " << stats.bloomFalsePositives << "\n";
 
-if (stats.bloomChecks > 0) {
-    double fpRate =
-        (double)stats.bloomFalsePositives /
-        (double)stats.bloomChecks;
+    if (stats.bloomChecks > 0) {
+        double fpRate =
+            (double)stats.bloomFalsePositives /
+            (double)stats.bloomChecks;
 
-    std::cout << "Bloom FP Rate      : "
-              << fpRate << "\n";
-}
+        std::cout << "Bloom FP Rate      : "
+                  << fpRate << "\n";
+    }
 
     size_t total = 0;
     for (const auto& level : levels)
         total += level.size();
 
     std::cout << "SSTable Count     : " << total << "\n";
-    std::cout << "\n--- Level Distribution ---\n";
-
-    for(size_t level = 0; level < levels.size(); ++level){
-
-        uint64_t levelBytes = 0;
-
-        for (const auto& sstable : levels[level])
-            levelBytes += sstable.getFileSize();
-
-        std::cout << "Level " << level
-                  << " : "
-                  << levels[level].size()
-                  << " files | "
-                  << levelBytes
-                  << " bytes\n";
-    }
-
-    std::cout << "Bytes Written     : " << stats.totalBytesWritten << "\n";
-    std::cout << "Compaction Bytes  : " << stats.totalCompactionBytes << "\n";
-
-    if(stats.totalBytesWritten > 0){
-        double wa =
-            (double)(stats.totalBytesWritten + stats.totalCompactionBytes)
-            / (double)stats.totalBytesWritten;
-
-        std::cout << "Write Amplification : " << wa << "\n";
-    }
-
-    std::cout << "Total Read SSTables : "
-              << stats.totalReadSSTables << "\n";
-
-    if(stats.totalGets > 0){
-        double ra =
-            (double)stats.totalReadSSTables /
-            (double)stats.totalGets;
-
-        std::cout << "Read Amplification  : "
-                  << ra << "\n";
-    }
 
     std::cout << "========================\n";
 }

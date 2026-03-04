@@ -17,11 +17,20 @@ enum class GetResult {
     DELETED
 };
 
+
 struct SSTableIndexEntry {
     std::string key;
     uint64_t offset;   // offset in binary SSTable
     SSTableIndexEntry(const std::string& k, uint64_t o)
         : key(k), offset(o) {}
+};
+
+class SSTableStatsHook {
+public:
+    virtual void recordBloomCheck() = 0;
+    virtual void recordBloomNegative() = 0;
+    virtual void recordBloomFalsePositive() = 0;
+    virtual ~SSTableStatsHook() = default;
 };
 
 class SSTable {
@@ -43,13 +52,14 @@ public:
     const std::string& getMaxKey() const { return maxKey; }
     uint64_t getFileSize() const { return fileSize; }
 
-    SSTableStatsHook* statsHook = nullptr;
-
 void setStatsHook(SSTableStatsHook* hook) {
     statsHook = hook;
 }
 
 private:
+ void loadFooterMetadata();
+    SSTableStatsHook* statsHook = nullptr;
+    
     std::string filePath;
 
     BloomFilter bloom;
@@ -67,13 +77,7 @@ private:
     void loadSparseIndex(); // existing
 
     // NEW
-    void loadFooterMetadata();
+   
 };
-class SSTableStatsHook {
-public:
-    virtual void recordBloomCheck() = 0;
-    virtual void recordBloomNegative() = 0;
-    virtual void recordBloomFalsePositive() = 0;
-    virtual ~SSTableStatsHook() = default;
-};
+
 #endif // SSTABLE_H

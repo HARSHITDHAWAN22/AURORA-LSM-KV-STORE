@@ -49,75 +49,71 @@ int main(int argc, char* argv[]) {
             std::cout<< "AuroraKV Shell Mode\n";
             std::cout<< "Type 'exit' to quit\n";
 
-            std::string cmd;
+           std::string line;
 
-            while(true){
-                try {
-                    std::cout << ">> ";
-                    std::cin >> cmd;
+while(true){
 
-                    if(!std::cin) break;
-                    if(cmd == "exit") break;
+    try{
 
-                    else if (cmd == "put"){
-                        std::string k, v;
-                        std::cin >> k >> v;
+        std::cout << ">> ";
+        std::getline(std::cin >> std::ws, line);
 
-                        store.put(k, v);
-                        Logger::getInstance().debug("PUT key=" + k);
+        if(line.empty()) continue;
 
-                        std::cout << "OK\n";
-                    }
+        std::stringstream ss(line);
+        std::string cmd;
+        ss >> cmd;
 
-                    else if(cmd == "get"){
-                        std::string k, val;
-                        std::cin >> k;
+        if(cmd == "exit") break;
 
-                        if(store.get(k, val)){
-                            Logger::getInstance().debug("GET hit key=" + k);
-                            std::cout << val << "\n";
-                        } else{
-                            Logger::getInstance().debug("GET miss key=" + k);
-                            std::cout << "NOT FOUND\n";
-                        }
-                    }
+        else if(cmd == "put"){
+            std::string k,v;
+            ss >> k >> v;
 
-                    else if(cmd == "delete"){
-                        std::string k;
-                        std::cin >> k;
+            store.put(k,v);
+            Logger::getInstance().debug("PUT key=" + k);
 
-                        store.deleteKey(k);
-                        Logger::getInstance().debug("DELETE key=" + k);
+            std::cout << "OK\n";
+        }
 
-                        std::cout << "DELETED\n";
-                    }
+        else if(cmd == "get"){
+            std::string k,val;
+            ss >> k;
 
-                    else if(cmd == "flush"){
-                        try{
-                            store.flush();
-                            Logger::getInstance().info("Manual flush triggered");
-                            std::cout << "FLUSHED\n";
-                        } catch(const std::exception& e){
-                            Logger::getInstance().error(
-                                "Flush error: " + std::string(e.what()));
-                            std::cout << "Flush error: " << e.what() << "\n";
-                        }
-                    }
-
-                    else if(cmd == "stats"){
-                        store.printStats();
-                    }
-
-                    else{
-                        std::cout << "Unknown command\n";
-                    }
-
-                } catch (const std::exception& e) {
-                    Logger::getInstance().error(
-                        "Shell command error: " + std::string(e.what()));
-                    std::cout << "Error: " << e.what() << "\n";
-                }
+            if(store.get(k,val)){
+                std::cout << val << "\n";
+            }else{
+                std::cout << "NOT FOUND\n";
             }
+        }
+
+        else if(cmd == "delete"){
+            std::string k;
+            ss >> k;
+
+            store.deleteKey(k);
+            std::cout << "DELETED\n";
+        }
+
+        else if(cmd == "flush"){
+            store.flush();
+            std::cout << "FLUSHED\n";
+        }
+
+        else if(cmd == "stats"){
+            store.printStats();
+        }
+
+        else{
+            std::cout << "Unknown command\n";
+        }
+
+    }
+    catch(const std::exception& e){
+        Logger::getInstance().error("Shell error: " + std::string(e.what()));
+        std::cout << "Error: " << e.what() << "\n";
+    }
+}
 
             Logger::getInstance().info("Shell exited normally");
             return 0;
