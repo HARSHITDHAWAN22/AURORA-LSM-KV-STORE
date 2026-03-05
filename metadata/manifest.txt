@@ -1,9 +1,10 @@
 LEVEL:0
-data/sstables/sstable_7.dat|a|b|59
-data/sstables/sstable_7.dat|a|b|59
 data/sstables/sstable_8.dat|a|k9|415
 data/sstables/sstable_9.dat|u1|u9|236
+data/sstables/sstable_6.dat|a|k9|415
+data/sstables/sstable_7.dat|u1|u9|236
 LEVEL:1
+data/L1_1772745463.dat|b|u9|244
 data/L1_1772615659.dat|d|g|85
 data/L1_1772614631.dat|persist1|persist2|92
 LEVEL:2

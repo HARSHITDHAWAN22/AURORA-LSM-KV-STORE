@@ -61,8 +61,6 @@ KVStore::KVStore(const std::string& configPath,
 
     flushThread = std::thread(&KVStore::backgroundFlush, this);
     compactionThread = std::thread(&KVStore::backgroundCompaction, this);
-
-    lastCompactionTime = std::chrono::steady_clock::now();
 }
 
 KVStore::~KVStore(){
@@ -107,7 +105,6 @@ void KVStore::put(const std::string& key,
     stats.totalPuts++;
 
     wal.logPut(key, value);
-
     memTable->put(key, value);
 
     if (memTable->isFull())
@@ -183,7 +180,6 @@ bool KVStore::get(const std::string& key,
 void KVStore::deleteKey(const std::string& key){
 
     wal.logDelete(key);
-
     memTable->put(key, MemTable::TOMBSTONE);
 
     if (memTable->isFull())
@@ -264,81 +260,73 @@ void KVStore::backgroundFlush(){
 
 void KVStore::runCompactionIfNeeded(){
 
-    for (size_t level = 0; level < levels.size() - 1; ++level) {
-
-        if (levels[level].size() <=
-            static_cast<size_t>(configManager.getL0Threshold()))
-            continue;
-
-        LOG_INFO("Compaction triggered at level " + std::to_string(level));
-
-        std::vector<std::string> oldFiles;
-
-        for (const auto& levelVec : levels)
-            for (const auto& sstable : levelVec)
-                oldFiles.push_back(sstable.getFilePath());
-
-        uint64_t bytes = compaction.run(levels);
-        stats.totalCompactionBytes += bytes;
-
-        manifest.clear();
-
-        for (size_t lvl = 0; lvl < levels.size(); ++lvl) {
-            for (const auto& sstable : levels[lvl]) {
-
-                SSTableMeta meta(
-                    sstable.getFilePath(),
-                    sstable.getMinKey(),
-                    sstable.getMaxKey(),
-                    sstable.getFileSize()
-                );
-
-                manifest.addSSTable(static_cast<int>(lvl), meta);
-            }
-        }
-
-        manifest.save();
-
-        for(const auto& file : oldFiles){
-
-            bool stillExists = false;
-
-            for(const auto& levelVec : levels){
-                for(const auto& sstable : levelVec){
-                    if(sstable.getFilePath() == file){
-                        stillExists = true;
-                        break;
-                    }
-                }
-                if (stillExists) break;
-            }
-
-            if(!stillExists)
-                std::filesystem::remove(file);
-        }
-
-        stats.totalCompactions++;
-
-        LOG_INFO("Compaction completed");
-
+    if (levels[0].size() <=
+        static_cast<size_t>(configManager.getL0Threshold()))
         return;
+
+    LOG_INFO("Compaction triggered at level 0");
+
+    std::vector<std::string> oldFiles;
+
+    for (const auto& levelVec : levels)
+        for (const auto& sstable : levelVec)
+            oldFiles.push_back(sstable.getFilePath());
+
+    uint64_t bytes = compaction.run(levels);
+    stats.totalCompactionBytes += bytes;
+
+    manifest.clear();
+
+    for (size_t lvl = 0; lvl < levels.size(); ++lvl) {
+        for (const auto& sstable : levels[lvl]) {
+
+            SSTableMeta meta(
+                sstable.getFilePath(),
+                sstable.getMinKey(),
+                sstable.getMaxKey(),
+                sstable.getFileSize()
+            );
+
+            manifest.addSSTable(static_cast<int>(lvl), meta);
+        }
     }
+
+    manifest.save();
+
+    for(const auto& file : oldFiles){
+
+        bool stillExists = false;
+
+        for(const auto& levelVec : levels){
+            for(const auto& sstable : levelVec){
+                if(sstable.getFilePath() == file){
+                    stillExists = true;
+                    break;
+                }
+            }
+            if (stillExists) break;
+        }
+
+        if(!stillExists)
+            std::filesystem::remove(file);
+    }
+
+    stats.totalCompactions++;
+
+    LOG_INFO("Compaction completed");
 }
 
 void KVStore::backgroundCompaction(){
 
+    int interval = configManager.getCompactionInterval();
+
     while(running){
 
         std::this_thread::sleep_for(
-            std::chrono::seconds(
-                configManager.getCompactionInterval()
-            )
+            std::chrono::seconds(interval)
         );
 
         runCompactionIfNeeded();
-
-        lastCompactionTime =
-            std::chrono::steady_clock::now();
     }
 }
 
@@ -368,6 +356,5 @@ void KVStore::printStats() const{
         total += level.size();
 
     std::cout << "SSTable Count     : " << total << "\n";
-
     std::cout << "========================\n";
 }
