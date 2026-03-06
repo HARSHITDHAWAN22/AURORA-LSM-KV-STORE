@@ -64,3 +64,7 @@ Wed Mar  4 14:22:03 2026
  [INFO] Shell exited normally
 Wed Mar  4 14:22:03 2026
  [INFO] KVStore shutting down
+Sat Mar  7 02:12:17 2026
+ [INFO] Compaction strategy set to leveling
+Sat Mar  7 02:14:56 2026
+ [INFO] Compaction strategy set to leveling

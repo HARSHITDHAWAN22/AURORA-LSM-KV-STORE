@@ -14,6 +14,8 @@
 #include "Compaction.h"
 #include "ManifestManager.h"
 #include "WAL.h"
+#include "LRUCache.h"
+
 
 const int MAX_LEVELS = 4;
 
@@ -30,6 +32,10 @@ struct KVStats{
     uint64_t bloomChecks = 0;
     uint64_t bloomNegatives = 0;
     uint64_t bloomFalsePositives = 0;
+
+     // Cache metrics
+    uint64_t cacheHits = 0;
+    uint64_t cacheMisses = 0;
 };
 
 class KVStore : public SSTableStatsHook {
@@ -37,6 +43,7 @@ public:
 
     explicit KVStore(const std::string& configPath,
                      const std::string& strategy);
+                     
 
     ~KVStore();
 
@@ -93,6 +100,9 @@ private:
     ManifestManager manifest;
 
     int sstableCounter;
+
+    // ---- LRU Cache ----
+    LRUCache cache;
 
     std::thread flushThread;
     std::thread compactionThread;

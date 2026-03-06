@@ -28,6 +28,7 @@ void KVStore::saveStats() const {
 
 KVStore::KVStore(const std::string& configPath,
                  const std::string& strategy)
+
     : configManager(configPath),
       memTable(nullptr),
       wal("metadata/wal.log"),
@@ -38,7 +39,8 @@ KVStore::KVStore(const std::string& configPath,
           0),
       manifest("metadata/manifest.txt"),
       sstableCounter(0),
-      running(false)
+      running(false),
+      cache(10000)   // LRU cache capacity
 {
     if (!configManager.load()) {
         LOG_ERROR("Config load failed");
@@ -107,6 +109,9 @@ void KVStore::put(const std::string& key,
     wal.logPut(key, value);
     memTable->put(key, value);
 
+    // update cache
+    cache.put(key,value);
+
     if (memTable->isFull())
         flushMemTable();
 }
@@ -117,6 +122,15 @@ bool KVStore::get(const std::string& key,
     value.clear();
     stats.totalGets++;
 
+    // ---- LRU Cache Lookup ----
+    if (cache.get(key,value)) {
+
+        stats.cacheHits++;
+        return true;
+    }
+
+    stats.cacheMisses++;
+
     uint64_t tablesChecked = 0;
     std::string memVal;
 
@@ -126,6 +140,10 @@ bool KVStore::get(const std::string& key,
             return false;
 
         value = memVal;
+
+        // update cache
+        cache.put(key,value);
+
         return true;
     }
 
@@ -142,6 +160,9 @@ bool KVStore::get(const std::string& key,
                 GetResult res = it->get(key, value);
 
                 if (res == GetResult::FOUND) {
+
+                    cache.put(key,value);
+
                     stats.totalReadSSTables += tablesChecked;
                     return true;
                 }
@@ -161,6 +182,9 @@ bool KVStore::get(const std::string& key,
                 GetResult res = table.get(key, value);
 
                 if (res == GetResult::FOUND) {
+
+                    cache.put(key,value);
+
                     stats.totalReadSSTables += tablesChecked;
                     return true;
                 }
@@ -181,6 +205,9 @@ void KVStore::deleteKey(const std::string& key){
 
     wal.logDelete(key);
     memTable->put(key, MemTable::TOMBSTONE);
+
+    // remove from cache
+    cache.remove(key);
 
     if (memTable->isFull())
         flushMemTable();
@@ -350,6 +377,21 @@ void KVStore::printStats() const{
         std::cout << "Bloom FP Rate      : "
                   << fpRate << "\n";
     }
+
+    // ---- Cache stats ----
+    std::cout << "Cache Hits        : " << stats.cacheHits << "\n";
+    std::cout << "Cache Misses      : " << stats.cacheMisses << "\n";
+
+    double hitRate = 0.0;
+
+    if(stats.cacheHits + stats.cacheMisses > 0)
+    {
+        hitRate =
+            (double)stats.cacheHits /
+            (stats.cacheHits + stats.cacheMisses);
+    }
+
+    std::cout << "Cache Hit Rate    : " << hitRate << "\n";
 
     size_t total = 0;
     for (const auto& level : levels)

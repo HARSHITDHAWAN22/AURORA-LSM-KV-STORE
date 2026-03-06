@@ -48,3 +48,16 @@ void LRUCache::put(const std::string& key, const std::string& value){
 
     cacheMap[key] = cacheList.begin();
 }
+
+
+void LRUCache::remove(const std::string& key)
+{
+    auto it = cacheMap.find(key);
+
+    if (it == cacheMap.end())
+        return;
+
+    cacheList.erase(it->second);
+
+    cacheMap.erase(it);
+}
