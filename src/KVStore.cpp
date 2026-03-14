@@ -13,6 +13,8 @@
 #include "RangeIterator.h"
 #include "Logger.h"
 
+static std::chrono::steady_clock::time_point benchmarkStart;
+
 void KVStore::loadStats() {
     std::ifstream in("metadata/stats.dat", std::ios::binary);
     if (!in.is_open()) return;
@@ -40,7 +42,7 @@ KVStore::KVStore(const std::string& configPath,
       manifest("metadata/manifest.txt"),
       sstableCounter(0),
       running(false),
-      cache(10000)   // LRU cache capacity
+      cache(10000)
 {
     if (!configManager.load()) {
         LOG_ERROR("Config load failed");
@@ -48,6 +50,8 @@ KVStore::KVStore(const std::string& configPath,
     }
 
     loadStats();
+
+    benchmarkStart = std::chrono::steady_clock::now();
 
     memTable = new MemTable(configManager.getMemTableMaxEntries());
 
@@ -109,7 +113,6 @@ void KVStore::put(const std::string& key,
     wal.logPut(key, value);
     memTable->put(key, value);
 
-    // update cache
     cache.put(key,value);
 
     if (memTable->isFull())
@@ -122,9 +125,7 @@ bool KVStore::get(const std::string& key,
     value.clear();
     stats.totalGets++;
 
-    // ---- LRU Cache Lookup ----
     if (cache.get(key,value)) {
-
         stats.cacheHits++;
         return true;
     }
@@ -140,8 +141,6 @@ bool KVStore::get(const std::string& key,
             return false;
 
         value = memVal;
-
-        // update cache
         cache.put(key,value);
 
         return true;
@@ -206,7 +205,6 @@ void KVStore::deleteKey(const std::string& key){
     wal.logDelete(key);
     memTable->put(key, MemTable::TOMBSTONE);
 
-    // remove from cache
     cache.remove(key);
 
     if (memTable->isFull())
@@ -360,10 +358,48 @@ void KVStore::backgroundCompaction(){
 void KVStore::printStats() const{
 
     std::cout << "==== AuroraKV Stats ====\n";
+
     std::cout << "Total PUTs        : " << stats.totalPuts << "\n";
     std::cout << "Total GETs        : " << stats.totalGets << "\n";
     std::cout << "Total Flushes     : " << stats.totalFlushes << "\n";
     std::cout << "Total Compactions : " << stats.totalCompactions << "\n";
+
+    auto now = std::chrono::steady_clock::now();
+
+double seconds =
+    std::chrono::duration<double>(now - benchmarkStart).count();
+
+if(seconds < 1)
+    seconds = 1;
+
+    if(seconds > 0){
+        std::cout << "PUT Throughput    : "
+                  << stats.totalPuts / seconds
+                  << " ops/sec\n";
+
+        std::cout << "GET Throughput    : "
+                  << stats.totalGets / seconds
+                  << " ops/sec\n";
+    }
+
+    double readAmp = 0;
+    if(stats.totalGets > 0)
+        readAmp =
+            (double)stats.totalReadSSTables /
+            stats.totalGets;
+
+    std::cout << "Read Amplification : "
+              << readAmp << "\n";
+
+    double writeAmp = 0;
+    if(stats.totalBytesWritten > 0)
+        writeAmp =
+            (double)(stats.totalBytesWritten +
+                     stats.totalCompactionBytes)
+            / stats.totalBytesWritten;
+
+    std::cout << "Write Amplification : "
+              << writeAmp << "\n";
 
     std::cout << "Bloom Checks       : " << stats.bloomChecks << "\n";
     std::cout << "Bloom Negatives    : " << stats.bloomNegatives << "\n";
@@ -378,25 +414,23 @@ void KVStore::printStats() const{
                   << fpRate << "\n";
     }
 
-    // ---- Cache stats ----
     std::cout << "Cache Hits        : " << stats.cacheHits << "\n";
     std::cout << "Cache Misses      : " << stats.cacheMisses << "\n";
 
-    double hitRate = 0.0;
-
+    double hitRate = 0;
     if(stats.cacheHits + stats.cacheMisses > 0)
-    {
         hitRate =
             (double)stats.cacheHits /
             (stats.cacheHits + stats.cacheMisses);
-    }
 
-    std::cout << "Cache Hit Rate    : " << hitRate << "\n";
+    std::cout << "Cache Hit Rate    : "
+              << hitRate << "\n";
 
     size_t total = 0;
     for (const auto& level : levels)
         total += level.size();
 
     std::cout << "SSTable Count     : " << total << "\n";
+
     std::cout << "========================\n";
 }

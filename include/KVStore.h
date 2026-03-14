@@ -36,6 +36,9 @@ struct KVStats{
      // Cache metrics
     uint64_t cacheHits = 0;
     uint64_t cacheMisses = 0;
+
+    uint64_t benchmarkStartTime = 0;
+uint64_t benchmarkEndTime = 0;
 };
 
 class KVStore : public SSTableStatsHook {
