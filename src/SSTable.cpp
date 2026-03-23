@@ -13,6 +13,9 @@ struct SSTableFooter {
     uint64_t magic;
 };
 
+// =======================
+// Constructor
+// =======================
 SSTable::SSTable(const std::string& filePath,
                  size_t bloomBitSize,
                  size_t bloomHashCount)
@@ -55,6 +58,7 @@ SSTable::SSTable(const std::string& filePath,
     }
 }
 
+// =======================
 void SSTable::loadFooterMetadata() {
 
     std::ifstream in(filePath, std::ios::binary);
@@ -86,6 +90,25 @@ void SSTable::loadFooterMetadata() {
     in.read(&maxKey[0], maxSize);
 }
 
+// =======================
+// ✅ BLOOM ENTRY POINT (ONLY PLACE FOR STATS)
+// =======================
+bool SSTable::mightContain(const std::string& key) const {
+
+    if (statsHook) {
+        statsHook->recordBloomCheck();
+    }
+
+    bool result = bloom.mightContain(key);
+
+    if (!result && statsHook) {
+        statsHook->recordBloomNegative();
+    }
+
+    return result;
+}
+
+// =======================
 bool SSTable::isBinarySSTable() const {
 
     std::ifstream in(filePath, std::ios::binary);
@@ -106,6 +129,7 @@ bool SSTable::isBinarySSTable() const {
     return footer.magic == SSTABLE_MAGIC;
 }
 
+// =======================
 bool SSTable::writeToDisk(const std::map<std::string, std::string>& data) {
 
     bloom = BloomFilter(10000, 3);
@@ -188,6 +212,9 @@ bool SSTable::writeToDisk(const std::map<std::string, std::string>& data) {
     return true;
 }
 
+// =======================
+// GET ENTRY
+// =======================
 GetResult SSTable::get(const std::string& key,
                        std::string& value) const {
 
@@ -197,17 +224,11 @@ GetResult SSTable::get(const std::string& key,
     return getBinary(key, value);
 }
 
+// =======================
+// ✅ FIXED: NO BLOOM HERE
+// =======================
 GetResult SSTable::getBinary(const std::string& key,
                              std::string& value) const {
-
-   if(statsHook)
-    statsHook->recordBloomCheck();
-
-if (!bloom.mightContain(key)) {
-    if(statsHook)
-    statsHook->recordBloomNegative();
-    return GetResult::NOT_FOUND;
-}
 
     std::ifstream in(filePath, std::ios::binary);
     if (!in.is_open())
@@ -279,16 +300,19 @@ if (!bloom.mightContain(key)) {
             return GetResult::FOUND;
         }
 
-        if(curKey > key)
+        if (curKey > key)
             break;
     }
 
-        if(statsHook){
-        statsHook->recordBloomFalsePositive();}
+    // false positive
+    if (statsHook) {
+        statsHook->recordBloomFalsePositive();
+    }
 
     return GetResult::NOT_FOUND;
 }
 
-const std::string& SSTable::getFilePath() const{
+// =======================
+const std::string& SSTable::getFilePath() const {
     return filePath;
 }

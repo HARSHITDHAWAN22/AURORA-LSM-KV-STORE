@@ -17,10 +17,9 @@ enum class GetResult {
     DELETED
 };
 
-
 struct SSTableIndexEntry {
     std::string key;
-    uint64_t offset;   // offset in binary SSTable
+    uint64_t offset;
     SSTableIndexEntry(const std::string& k, uint64_t o)
         : key(k), offset(o) {}
 };
@@ -35,10 +34,44 @@ public:
 
 class SSTable {
 public:
+    // =======================
+    // CONSTRUCTOR
+    // =======================
     SSTable(const std::string& filePath,
             size_t bloomBitSize,
             size_t bloomHashCount);
 
+    // =======================
+    // 🔥 COPY CONSTRUCTOR (FIXED ORDER)
+    // =======================
+    SSTable(const SSTable& other)
+        : statsHook(other.statsHook),
+          filePath(other.filePath),
+          bloom(other.bloom),
+          sparseIndex(other.sparseIndex),
+          minKey(other.minKey),
+          maxKey(other.maxKey),
+          fileSize(other.fileSize) {}
+
+    // =======================
+    // 🔥 ASSIGNMENT OPERATOR
+    // =======================
+    SSTable& operator=(const SSTable& other) {
+        if (this != &other) {
+            statsHook = other.statsHook;
+            filePath = other.filePath;
+            bloom = other.bloom;
+            sparseIndex = other.sparseIndex;
+            minKey = other.minKey;
+            maxKey = other.maxKey;
+            fileSize = other.fileSize;
+        }
+        return *this;
+    }
+
+    // =======================
+    // CORE APIs
+    // =======================
     bool writeToDisk(const std::map<std::string, std::string>& data);
     GetResult get(const std::string& key, std::string& value) const;
     const std::string& getFilePath() const;
@@ -47,37 +80,45 @@ public:
                   const std::string& value,
                   std::ofstream& out);
 
-    //NEW: Range Metadata Getters
+    // =======================
+    // RANGE METADATA
+    // =======================
     const std::string& getMinKey() const { return minKey; }
     const std::string& getMaxKey() const { return maxKey; }
     uint64_t getFileSize() const { return fileSize; }
 
-void setStatsHook(SSTableStatsHook* hook) {
-    statsHook = hook;
-}
+    // =======================
+    // BLOOM FILTER ENTRY
+    // =======================
+    bool mightContain(const std::string& key) const;
+
+    void setStatsHook(SSTableStatsHook* hook) {
+        statsHook = hook;
+    }
 
 private:
- void loadFooterMetadata();
-    SSTableStatsHook* statsHook = nullptr;
-    
-    std::string filePath;
+    // =======================
+    // MEMBER ORDER (IMPORTANT)
+    // =======================
+    SSTableStatsHook* statsHook = nullptr;   // 1️⃣ FIRST
 
-    BloomFilter bloom;
-    std::vector<SSTableIndexEntry> sparseIndex;
+    std::string filePath;                    // 2️⃣
+    BloomFilter bloom;                      // 3️⃣
+    std::vector<SSTableIndexEntry> sparseIndex; // 4️⃣
 
-    //NEW: Range Metadata
-    std::string minKey;
-    std::string maxKey;
-    uint64_t fileSize = 0;
+    std::string minKey;                     // 5️⃣
+    std::string maxKey;                     // 6️⃣
+    uint64_t fileSize = 0;                  // 7️⃣ LAST
 
+    // =======================
+    // INTERNALS
+    // =======================
+    void loadFooterMetadata();
     bool isBinarySSTable() const;
     GetResult getBinary(const std::string& key, std::string& value) const;
 
-    void loadBloom();       // existing
-    void loadSparseIndex(); // existing
-
-    // NEW
-   
+    void loadBloom();
+    void loadSparseIndex();
 };
 
 #endif // SSTABLE_H
