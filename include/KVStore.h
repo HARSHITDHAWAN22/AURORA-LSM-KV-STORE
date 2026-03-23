@@ -16,6 +16,8 @@
 #include "WAL.h"
 #include "LRUCache.h"
 
+#include "TableCache.h"
+
 
 const int MAX_LEVELS = 4;
 
@@ -76,6 +78,7 @@ public:
     void recordBloomFalsePositive() override {
         stats.bloomFalsePositives++;
     }
+    TableCache tableCache;
 
 private:
 

@@ -9,6 +9,7 @@
 
 #include "MemTable.h"
 #include "Logger.h"
+#include "TableCache.h"   
 
 static std::chrono::steady_clock::time_point benchmarkStart;
 
@@ -41,7 +42,8 @@ KVStore::KVStore(const std::string& configPath,
       manifest("metadata/manifest.txt"),
       sstableCounter(0),
       running(false),
-      cache(10000)
+      cache(10000),
+      tableCache(50)
 {
     if (!configManager.load()) {
         throw std::runtime_error("Config load failed");
@@ -111,7 +113,7 @@ void KVStore::put(const std::string& key,
 }
 
 // =======================
-// FIXED GET (KEY RANGE OPTIMIZATION)
+// GET WITH TABLE CACHE
 // =======================
 bool KVStore::get(const std::string& key,
                   std::string& value){
@@ -119,7 +121,7 @@ bool KVStore::get(const std::string& key,
     value.clear();
     stats.totalGets++;
 
-    // Cache
+    // LRU cache (KV cache)
     if (cache.get(key,value)) {
         stats.cacheHits++;
         return true;
@@ -139,20 +141,26 @@ bool KVStore::get(const std::string& key,
         return true;
     }
 
-    //LSM levels
+    // LSM Levels
     for (size_t level = 0; level < levels.size(); level++) {
 
         auto& tables = levels[level];
 
         if (level == 0) {
-            // newest first
+
             for (auto it = tables.rbegin(); it != tables.rend(); ++it) {
 
-                // SKIP IRRELEVANT SSTABLE
                 if (key < it->getMinKey() || key > it->getMaxKey())
                     continue;
 
-                GetResult res = it->get(key, value);
+                SSTable table = *it;
+
+                //TABLE CACHE CHECK
+                if (!tableCache.get(it->getFilePath(), table)) {
+                    tableCache.put(it->getFilePath(), *it);
+                }
+
+                GetResult res = table.get(key, value);
 
                 if (res == GetResult::FOUND) {
                     cache.put(key,value);
@@ -165,11 +173,18 @@ bool KVStore::get(const std::string& key,
             }
         }
         else {
-            for (auto& table : tables) {
 
-                //SKIP IRRELEVANT SSTABLE
-                if (key < table.getMinKey() || key > table.getMaxKey())
+            for (auto& t : tables) {
+
+                if (key < t.getMinKey() || key > t.getMaxKey())
                     continue;
+
+                SSTable table = t;
+
+                //TABLE CACHE CHECK
+                if (!tableCache.get(t.getFilePath(), table)) {
+                    tableCache.put(t.getFilePath(), t);
+                }
 
                 GetResult res = table.get(key, value);
 
