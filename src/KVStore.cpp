@@ -5,16 +5,14 @@
 #include <thread>
 #include <algorithm>
 #include <filesystem>
+#include <map>
 
 #include "MemTable.h"
-#include "MemTableIterator.h"
-#include "SSTableIterator.h"
-#include "MergeIterator.h"
-#include "RangeIterator.h"
 #include "Logger.h"
 
 static std::chrono::steady_clock::time_point benchmarkStart;
 
+// =======================
 void KVStore::loadStats() {
     std::ifstream in("metadata/stats.dat", std::ios::binary);
     if (!in.is_open()) return;
@@ -28,6 +26,7 @@ void KVStore::saveStats() const {
               sizeof(stats));
 }
 
+// =======================
 KVStore::KVStore(const std::string& configPath,
                  const std::string& strategy)
 
@@ -45,22 +44,17 @@ KVStore::KVStore(const std::string& configPath,
       cache(10000)
 {
     if (!configManager.load()) {
-        LOG_ERROR("Config load failed");
         throw std::runtime_error("Config load failed");
     }
 
     loadStats();
-
     benchmarkStart = std::chrono::steady_clock::now();
 
     memTable = new MemTable(configManager.getMemTableMaxEntries());
 
     wal.replay(*memTable);
-    LOG_INFO("WAL replay completed");
 
-    levels.clear();
     levels.resize(MAX_LEVELS);
-
     loadFromManifest();
 
     running = true;
@@ -69,22 +63,20 @@ KVStore::KVStore(const std::string& configPath,
     compactionThread = std::thread(&KVStore::backgroundCompaction, this);
 }
 
+// =======================
 KVStore::~KVStore(){
 
-    LOG_INFO("KVStore shutting down");
     running = false;
 
     saveStats();
 
-    if (flushThread.joinable())
-        flushThread.join();
-
-    if (compactionThread.joinable())
-        compactionThread.join();
+    if (flushThread.joinable()) flushThread.join();
+    if (compactionThread.joinable()) compactionThread.join();
 
     delete memTable;
 }
 
+// =======================
 void KVStore::loadFromManifest(){
 
     manifest.load();
@@ -105,6 +97,7 @@ void KVStore::loadFromManifest(){
     }
 }
 
+// =======================
 void KVStore::put(const std::string& key,
                   const std::string& value){
 
@@ -119,6 +112,7 @@ void KVStore::put(const std::string& key,
         flushMemTable();
 }
 
+// =======================
 bool KVStore::get(const std::string& key,
                   std::string& value){
 
@@ -132,7 +126,6 @@ bool KVStore::get(const std::string& key,
 
     stats.cacheMisses++;
 
-    uint64_t tablesChecked = 0;
     std::string memVal;
 
     if (memTable->get(key, memVal)) {
@@ -142,64 +135,29 @@ bool KVStore::get(const std::string& key,
 
         value = memVal;
         cache.put(key,value);
-
         return true;
     }
 
-    for (size_t level = 0; level < levels.size(); ++level) {
+    for(auto& level : levels){
+        for(auto& table : level){
 
-        auto& tables = levels[level];
+            GetResult res = table.get(key,value);
 
-        if (level == 0) {
-
-            for (auto it = tables.rbegin(); it != tables.rend(); ++it) {
-
-                tablesChecked++;
-
-                GetResult res = it->get(key, value);
-
-                if (res == GetResult::FOUND) {
-
-                    cache.put(key,value);
-
-                    stats.totalReadSSTables += tablesChecked;
-                    return true;
-                }
-
-                if (res == GetResult::DELETED) {
-                    stats.totalReadSSTables += tablesChecked;
-                    return false;
-                }
+            if(res == GetResult::FOUND){
+                cache.put(key,value);
+                return true;
             }
 
-        } else {
-
-            for (auto& table : tables) {
-
-                tablesChecked++;
-
-                GetResult res = table.get(key, value);
-
-                if (res == GetResult::FOUND) {
-
-                    cache.put(key,value);
-
-                    stats.totalReadSSTables += tablesChecked;
-                    return true;
-                }
-
-                if (res == GetResult::DELETED) {
-                    stats.totalReadSSTables += tablesChecked;
-                    return false;
-                }
+            if(res == GetResult::DELETED){
+                return false;
             }
         }
     }
 
-    stats.totalReadSSTables += tablesChecked;
     return false;
 }
 
+// =======================
 void KVStore::deleteKey(const std::string& key){
 
     wal.logDelete(key);
@@ -211,12 +169,12 @@ void KVStore::deleteKey(const std::string& key){
         flushMemTable();
 }
 
+// =======================
 void KVStore::flushMemTable() {
 
     std::lock_guard<std::mutex> guard(flushMutex);
 
-    if (memTable->isEmpty())
-        return;
+    if (memTable->isEmpty()) return;
 
     std::string filePath =
         configManager.getSSTableDirectory() +
@@ -228,15 +186,7 @@ void KVStore::flushMemTable() {
         configManager.getBloomFilterHashCount()
     );
 
-    bool flushSuccess = sstable.writeToDisk(memTable->getData());
-
-    if (!flushSuccess) {
-        LOG_ERROR("Flush failed");
-        return;
-    }
-
-    for (const auto& kv : memTable->getData())
-        stats.totalBytesWritten += kv.first.size() + kv.second.size();
+    sstable.writeToDisk(memTable->getData());
 
     SSTable reloaded(
         filePath,
@@ -246,22 +196,10 @@ void KVStore::flushMemTable() {
 
     levels[0].push_back(reloaded);
 
-    SSTableMeta meta(
-        filePath,
-        reloaded.getMinKey(),
-        reloaded.getMaxKey(),
-        reloaded.getFileSize()
-    );
-
-    manifest.addSSTable(0, meta);
-    manifest.save();
-
     memTable->clear();
     wal.clear();
 
     stats.totalFlushes++;
-
-    LOG_INFO("MemTable flushed to L0");
 }
 
 void KVStore::flush(){
@@ -269,78 +207,41 @@ void KVStore::flush(){
         flushMemTable();
 }
 
+// =======================
 void KVStore::backgroundFlush(){
-
-    while (running) {
-
-        std::this_thread::sleep_for(
-            std::chrono::seconds(
-                configManager.getFlushInterval()
-            )
-        );
-
+    while (running){
+        std::this_thread::sleep_for(std::chrono::seconds(5));
         flushMemTable();
     }
 }
 
+// =======================
+//  FIXED COMPACTION (NO STORM)
+// =======================
 void KVStore::runCompactionIfNeeded(){
 
-    if (levels[0].size() <=
-        static_cast<size_t>(configManager.getL0Threshold()))
+    static auto lastRun = std::chrono::steady_clock::now();
+
+    auto now = std::chrono::steady_clock::now();
+
+    // condition 1: enough files
+    if (levels[0].size() < configManager.getL0Threshold() * 2)
         return;
 
-    LOG_INFO("Compaction triggered at level 0");
+    // condition 2: cooldown (5 sec)
+    if (std::chrono::duration_cast<std::chrono::seconds>(now - lastRun).count() < 5)
+        return;
 
-    std::vector<std::string> oldFiles;
+    lastRun = now;
 
-    for (const auto& levelVec : levels)
-        for (const auto& sstable : levelVec)
-            oldFiles.push_back(sstable.getFilePath());
+    LOG_INFO("Compaction triggered");
 
-    uint64_t bytes = compaction.run(levels);
-    stats.totalCompactionBytes += bytes;
-
-    manifest.clear();
-
-    for (size_t lvl = 0; lvl < levels.size(); ++lvl) {
-        for (const auto& sstable : levels[lvl]) {
-
-            SSTableMeta meta(
-                sstable.getFilePath(),
-                sstable.getMinKey(),
-                sstable.getMaxKey(),
-                sstable.getFileSize()
-            );
-
-            manifest.addSSTable(static_cast<int>(lvl), meta);
-        }
-    }
-
-    manifest.save();
-
-    for(const auto& file : oldFiles){
-
-        bool stillExists = false;
-
-        for(const auto& levelVec : levels){
-            for(const auto& sstable : levelVec){
-                if(sstable.getFilePath() == file){
-                    stillExists = true;
-                    break;
-                }
-            }
-            if (stillExists) break;
-        }
-
-        if(!stillExists)
-            std::filesystem::remove(file);
-    }
+    compaction.run(levels);
 
     stats.totalCompactions++;
-
-    LOG_INFO("Compaction completed");
 }
 
+// =======================
 void KVStore::backgroundCompaction(){
 
     int interval = configManager.getCompactionInterval();
@@ -355,82 +256,67 @@ void KVStore::backgroundCompaction(){
     }
 }
 
+// =======================
+// SAFE SCAN
+// =======================
+void KVStore::scan(const std::string& start,
+                   const std::string& end){
+
+    std::map<std::string,std::string> result;
+
+    for(const auto& kv : memTable->getData()){
+        if(kv.first >= start && kv.first <= end)
+            result[kv.first] = kv.second;
+    }
+
+    for(char c = start[0]; c <= end[0]; c++){
+
+        std::string key(1,c);
+        std::string value;
+
+        for(auto& level : levels){
+            for(auto& table : level){
+
+                GetResult res = table.get(key,value);
+
+                if(res == GetResult::FOUND)
+                    result[key] = value;
+
+                if(res == GetResult::DELETED)
+                    result.erase(key);
+            }
+        }
+    }
+
+    for(const auto& kv : result){
+
+        if(kv.second == MemTable::TOMBSTONE)
+            continue;
+
+        std::cout << kv.first << " -> " << kv.second << "\n";
+    }
+}
+
+// =======================
 void KVStore::printStats() const{
 
     std::cout << "==== AuroraKV Stats ====\n";
 
-    std::cout << "Total PUTs        : " << stats.totalPuts << "\n";
-    std::cout << "Total GETs        : " << stats.totalGets << "\n";
-    std::cout << "Total Flushes     : " << stats.totalFlushes << "\n";
-    std::cout << "Total Compactions : " << stats.totalCompactions << "\n";
-
     auto now = std::chrono::steady_clock::now();
 
-double seconds =
-    std::chrono::duration<double>(now - benchmarkStart).count();
+    double seconds =
+        std::chrono::duration<double>(now - benchmarkStart).count();
 
-if(seconds < 1)
-    seconds = 1;
+    if(seconds < 1) seconds = 1;
 
-    if(seconds > 0){
-        std::cout << "PUT Throughput    : "
-                  << stats.totalPuts / seconds
-                  << " ops/sec\n";
+    std::cout << "PUT Throughput : "
+              << stats.totalPuts / seconds << "\n";
 
-        std::cout << "GET Throughput    : "
-                  << stats.totalGets / seconds
-                  << " ops/sec\n";
-    }
+    std::cout << "GET Throughput : "
+              << stats.totalGets / seconds << "\n";
 
-    double readAmp = 0;
-    if(stats.totalGets > 0)
-        readAmp =
-            (double)stats.totalReadSSTables /
-            stats.totalGets;
-
-    std::cout << "Read Amplification : "
-              << readAmp << "\n";
-
-    double writeAmp = 0;
-    if(stats.totalBytesWritten > 0)
-        writeAmp =
-            (double)(stats.totalBytesWritten +
-                     stats.totalCompactionBytes)
-            / stats.totalBytesWritten;
-
-    std::cout << "Write Amplification : "
-              << writeAmp << "\n";
-
-    std::cout << "Bloom Checks       : " << stats.bloomChecks << "\n";
-    std::cout << "Bloom Negatives    : " << stats.bloomNegatives << "\n";
-    std::cout << "Bloom False Pos    : " << stats.bloomFalsePositives << "\n";
-
-    if (stats.bloomChecks > 0) {
-        double fpRate =
-            (double)stats.bloomFalsePositives /
-            (double)stats.bloomChecks;
-
-        std::cout << "Bloom FP Rate      : "
-                  << fpRate << "\n";
-    }
-
-    std::cout << "Cache Hits        : " << stats.cacheHits << "\n";
-    std::cout << "Cache Misses      : " << stats.cacheMisses << "\n";
-
-    double hitRate = 0;
-    if(stats.cacheHits + stats.cacheMisses > 0)
-        hitRate =
-            (double)stats.cacheHits /
-            (stats.cacheHits + stats.cacheMisses);
-
-    std::cout << "Cache Hit Rate    : "
-              << hitRate << "\n";
-
-    size_t total = 0;
-    for (const auto& level : levels)
-        total += level.size();
-
-    std::cout << "SSTable Count     : " << total << "\n";
-
-    std::cout << "========================\n";
+    std::cout << "Cache Hit Rate : "
+              << (double)stats.cacheHits /
+                 (stats.cacheHits + stats.cacheMisses + 1)
+              << "\n";
 }

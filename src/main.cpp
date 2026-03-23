@@ -48,9 +48,6 @@ int main(int argc, char* argv[]) {
 
             std::string strategy = loadStrategy();
 
-            Logger::getInstance().info(
-                "Starting AuroraKV shell with strategy: " + strategy);
-
             KVStore store("config/system_config.json", strategy);
 
             std::cout << "AuroraKV Shell Mode\n";
@@ -85,9 +82,6 @@ int main(int argc, char* argv[]) {
                         ss >> k >> v;
 
                         store.put(k, v);
-
-                        Logger::getInstance().debug("PUT key=" + k);
-
                         std::cout << "OK\n";
                     }
 
@@ -114,7 +108,6 @@ int main(int argc, char* argv[]) {
                         ss >> k;
 
                         store.deleteKey(k);
-
                         std::cout << "DELETED\n";
                     }
 
@@ -124,8 +117,23 @@ int main(int argc, char* argv[]) {
                     else if (cmd == "flush") {
 
                         store.flush();
-
                         std::cout << "FLUSHED\n";
+                    }
+
+                    // ------------------
+                    // SCAN  ✅ FIX ADDED
+                    // ------------------
+                    else if (cmd == "scan") {
+
+                        std::string start, end;
+                        ss >> start >> end;
+
+                        if (start.empty() || end.empty()) {
+                            std::cout << "Usage: scan <start> <end>\n";
+                            continue;
+                        }
+
+                        store.scan(start, end);
                     }
 
                     // ------------------
@@ -159,7 +167,6 @@ int main(int argc, char* argv[]) {
                         for (int i = 0; i < n; i++) {
 
                             std::string val;
-
                             store.get("k" + std::to_string(i), val);
                         }
 
@@ -177,68 +184,47 @@ int main(int argc, char* argv[]) {
                     }
 
                     else {
-
                         std::cout << "Unknown command\n";
                     }
 
                 } catch (const std::exception& e) {
 
-                    Logger::getInstance().error(
-                        "Shell error: " + std::string(e.what()));
-
                     std::cout << "Error: " << e.what() << "\n";
                 }
             }
-
-            Logger::getInstance().info("Shell exited normally");
 
             return 0;
         }
 
         // ==========================
-        // SET COMPACTION STRATEGY
+        // SET STRATEGY
         // ==========================
         else if (command == "start") {
 
             if (argc < 3) {
-
-                std::cout
-                    << "Specify compaction strategy: leveling | tiering\n";
-
+                std::cout << "Specify compaction strategy: leveling | tiering\n";
                 return 0;
             }
 
             std::string strategy = argv[2];
 
             if (strategy != "leveling" && strategy != "tiering") {
-
-                std::cout
-                    << "Invalid strategy. Use leveling or tiering.\n";
-
+                std::cout << "Invalid strategy\n";
                 return 0;
             }
 
             saveStrategy(strategy);
-
-            Logger::getInstance().info(
-                "Compaction strategy set to " + strategy);
-
             std::cout << "Strategy set to " << strategy << "\n";
 
             return 0;
         }
 
         std::cout << "Unknown command\n";
-
         return 0;
 
-    } catch (const std::exception& e) {
+    } catch (...) {
 
-        Logger::getInstance().error(
-            "Fatal error: " + std::string(e.what()));
-
-        std::cerr << "Fatal error occurred. Check aurora.log\n";
-
+        std::cerr << "Fatal error\n";
         return 1;
     }
 }
