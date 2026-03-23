@@ -31,11 +31,9 @@ int main(int argc, char* argv[]) {
         Logger::getInstance().init("aurora.log", LogLevel::INFO);
 
         if (argc < 2) {
-
             std::cout << "Usage:\n";
             std::cout << "  aurorakv shell\n";
             std::cout << "  aurorakv start <leveling|tiering>\n";
-
             return 0;
         }
 
@@ -47,7 +45,6 @@ int main(int argc, char* argv[]) {
         if (command == "shell") {
 
             std::string strategy = loadStrategy();
-
             KVStore store("config/system_config.json", strategy);
 
             std::cout << "AuroraKV Shell Mode\n";
@@ -66,7 +63,6 @@ int main(int argc, char* argv[]) {
                         continue;
 
                     std::stringstream ss(line);
-
                     std::string cmd;
                     ss >> cmd;
 
@@ -77,7 +73,6 @@ int main(int argc, char* argv[]) {
                     // PUT
                     // ------------------
                     else if (cmd == "put") {
-
                         std::string k, v;
                         ss >> k >> v;
 
@@ -89,7 +84,6 @@ int main(int argc, char* argv[]) {
                     // GET
                     // ------------------
                     else if (cmd == "get") {
-
                         std::string k, val;
                         ss >> k;
 
@@ -103,7 +97,6 @@ int main(int argc, char* argv[]) {
                     // DELETE
                     // ------------------
                     else if (cmd == "delete") {
-
                         std::string k;
                         ss >> k;
 
@@ -115,16 +108,14 @@ int main(int argc, char* argv[]) {
                     // FLUSH
                     // ------------------
                     else if (cmd == "flush") {
-
                         store.flush();
                         std::cout << "FLUSHED\n";
                     }
 
                     // ------------------
-                    // SCAN  ✅ FIX ADDED
+                    // SCAN
                     // ------------------
                     else if (cmd == "scan") {
-
                         std::string start, end;
                         ss >> start >> end;
 
@@ -140,12 +131,11 @@ int main(int argc, char* argv[]) {
                     // STATS
                     // ------------------
                     else if (cmd == "stats") {
-
                         store.printStats();
                     }
 
                     // ------------------
-                    // BENCHMARK
+                    // FIXED BENCH
                     // ------------------
                     else if (cmd == "bench") {
 
@@ -159,13 +149,22 @@ int main(int argc, char* argv[]) {
 
                         auto start = std::chrono::steady_clock::now();
 
+                        // PUT phase (controlled)
                         for (int i = 0; i < n; i++) {
+
                             store.put("k" + std::to_string(i),
                                       "v" + std::to_string(i));
+
+                            // Prevent excessive flush/compaction
+                            // if (i % 500 == 0) {
+                            //     store.flush();
+                            // }
                         }
 
-                        for (int i = 0; i < n; i++) {
+                        store.flush(); // final flush
 
+                        // GET phase
+                        for (int i = 0; i < n; i++) {
                             std::string val;
                             store.get("k" + std::to_string(i), val);
                         }
@@ -188,7 +187,6 @@ int main(int argc, char* argv[]) {
                     }
 
                 } catch (const std::exception& e) {
-
                     std::cout << "Error: " << e.what() << "\n";
                 }
             }
@@ -202,7 +200,7 @@ int main(int argc, char* argv[]) {
         else if (command == "start") {
 
             if (argc < 3) {
-                std::cout << "Specify compaction strategy: leveling | tiering\n";
+                std::cout << "Specify compaction strategy\n";
                 return 0;
             }
 
@@ -223,7 +221,6 @@ int main(int argc, char* argv[]) {
         return 0;
 
     } catch (...) {
-
         std::cerr << "Fatal error\n";
         return 1;
     }

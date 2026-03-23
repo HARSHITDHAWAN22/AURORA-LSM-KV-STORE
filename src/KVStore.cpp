@@ -39,6 +39,9 @@ KVStore::KVStore(const std::string& configPath,
               : Compaction::Strategy::LEVEL,
           0),
       manifest("metadata/manifest.txt"),
+
+
+
       sstableCounter(0),
       running(false),
       cache(10000)
@@ -60,7 +63,7 @@ KVStore::KVStore(const std::string& configPath,
     running = true;
 
     flushThread = std::thread(&KVStore::backgroundFlush, this);
-    compactionThread = std::thread(&KVStore::backgroundCompaction, this);
+   // compactionThread = std::thread(&KVStore::backgroundCompaction, this);
 }
 
 // =======================
@@ -221,24 +224,34 @@ void KVStore::backgroundFlush(){
 void KVStore::runCompactionIfNeeded(){
 
     static auto lastRun = std::chrono::steady_clock::now();
-
     auto now = std::chrono::steady_clock::now();
 
-    // condition 1: enough files
+    // Only trigger if L0 too large
     if (levels[0].size() < configManager.getL0Threshold() * 2)
         return;
 
-    // condition 2: cooldown (5 sec)
+    // cooldown
     if (std::chrono::duration_cast<std::chrono::seconds>(now - lastRun).count() < 5)
         return;
 
     lastRun = now;
 
-    LOG_INFO("Compaction triggered");
+    LOG_INFO("Compaction triggered (controlled)");
 
-    compaction.run(levels);
+    // ONLY COMPACT L0 → L1 (NOT ALL LEVELS)
+    std::vector<std::vector<SSTable>> tempLevels;
 
+    tempLevels.push_back(levels[0]); // L0
+    tempLevels.push_back(levels[1]); // L1
+
+    uint64_t bytes = compaction.run(tempLevels);
+
+    stats.totalCompactionBytes += bytes;
     stats.totalCompactions++;
+
+    // Replace updated levels
+    levels[0] = tempLevels[0];
+    levels[1] = tempLevels[1];
 }
 
 // =======================

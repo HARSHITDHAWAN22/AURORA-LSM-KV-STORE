@@ -136,3 +136,13 @@ Mon Mar 23 13:17:47 2026
  [INFO] MemTable initialized with maxEntries=5000
 Mon Mar 23 13:23:08 2026
  [INFO] Shell exited normally
+Mon Mar 23 13:23:50 2026
+ [INFO] WAL initialized at path: metadata/wal.log
+Mon Mar 23 13:23:50 2026
+ [INFO] ManifestManager initialized at path: metadata/manifest.txt
+Mon Mar 23 13:23:50 2026
+ [INFO] MemTable initialized with maxEntries=5000
+Mon Mar 23 13:23:50 2026
+ [INFO] WAL replay started
+Mon Mar 23 13:23:50 2026
+ [INFO] WAL replay completed. Operations replayed: 0
