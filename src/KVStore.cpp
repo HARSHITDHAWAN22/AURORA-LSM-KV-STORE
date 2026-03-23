@@ -39,9 +39,6 @@ KVStore::KVStore(const std::string& configPath,
               : Compaction::Strategy::LEVEL,
           0),
       manifest("metadata/manifest.txt"),
-
-
-
       sstableCounter(0),
       running(false),
       cache(10000)
@@ -63,7 +60,6 @@ KVStore::KVStore(const std::string& configPath,
     running = true;
 
     flushThread = std::thread(&KVStore::backgroundFlush, this);
-   // compactionThread = std::thread(&KVStore::backgroundCompaction, this);
 }
 
 // =======================
@@ -74,7 +70,6 @@ KVStore::~KVStore(){
     saveStats();
 
     if (flushThread.joinable()) flushThread.join();
-    if (compactionThread.joinable()) compactionThread.join();
 
     delete memTable;
 }
@@ -116,12 +111,15 @@ void KVStore::put(const std::string& key,
 }
 
 // =======================
+// FIXED GET (KEY RANGE OPTIMIZATION)
+// =======================
 bool KVStore::get(const std::string& key,
                   std::string& value){
 
     value.clear();
     stats.totalGets++;
 
+    // Cache
     if (cache.get(key,value)) {
         stats.cacheHits++;
         return true;
@@ -129,8 +127,8 @@ bool KVStore::get(const std::string& key,
 
     stats.cacheMisses++;
 
+    // MemTable
     std::string memVal;
-
     if (memTable->get(key, memVal)) {
 
         if (memVal == MemTable::TOMBSTONE)
@@ -141,18 +139,48 @@ bool KVStore::get(const std::string& key,
         return true;
     }
 
-    for(auto& level : levels){
-        for(auto& table : level){
+    //LSM levels
+    for (size_t level = 0; level < levels.size(); level++) {
 
-            GetResult res = table.get(key,value);
+        auto& tables = levels[level];
 
-            if(res == GetResult::FOUND){
-                cache.put(key,value);
-                return true;
+        if (level == 0) {
+            // newest first
+            for (auto it = tables.rbegin(); it != tables.rend(); ++it) {
+
+                // SKIP IRRELEVANT SSTABLE
+                if (key < it->getMinKey() || key > it->getMaxKey())
+                    continue;
+
+                GetResult res = it->get(key, value);
+
+                if (res == GetResult::FOUND) {
+                    cache.put(key,value);
+                    return true;
+                }
+
+                if (res == GetResult::DELETED) {
+                    return false;
+                }
             }
+        }
+        else {
+            for (auto& table : tables) {
 
-            if(res == GetResult::DELETED){
-                return false;
+                //SKIP IRRELEVANT SSTABLE
+                if (key < table.getMinKey() || key > table.getMaxKey())
+                    continue;
+
+                GetResult res = table.get(key, value);
+
+                if (res == GetResult::FOUND) {
+                    cache.put(key,value);
+                    return true;
+                }
+
+                if (res == GetResult::DELETED) {
+                    return false;
+                }
             }
         }
     }
@@ -219,59 +247,6 @@ void KVStore::backgroundFlush(){
 }
 
 // =======================
-//  FIXED COMPACTION (NO STORM)
-// =======================
-void KVStore::runCompactionIfNeeded(){
-
-    static auto lastRun = std::chrono::steady_clock::now();
-    auto now = std::chrono::steady_clock::now();
-
-    // Only trigger if L0 too large
-    if (levels[0].size() < configManager.getL0Threshold() * 2)
-        return;
-
-    // cooldown
-    if (std::chrono::duration_cast<std::chrono::seconds>(now - lastRun).count() < 5)
-        return;
-
-    lastRun = now;
-
-    LOG_INFO("Compaction triggered (controlled)");
-
-    // ONLY COMPACT L0 → L1 (NOT ALL LEVELS)
-    std::vector<std::vector<SSTable>> tempLevels;
-
-    tempLevels.push_back(levels[0]); // L0
-    tempLevels.push_back(levels[1]); // L1
-
-    uint64_t bytes = compaction.run(tempLevels);
-
-    stats.totalCompactionBytes += bytes;
-    stats.totalCompactions++;
-
-    // Replace updated levels
-    levels[0] = tempLevels[0];
-    levels[1] = tempLevels[1];
-}
-
-// =======================
-void KVStore::backgroundCompaction(){
-
-    int interval = configManager.getCompactionInterval();
-
-    while(running){
-
-        std::this_thread::sleep_for(
-            std::chrono::seconds(interval)
-        );
-
-        runCompactionIfNeeded();
-    }
-}
-
-// =======================
-// SAFE SCAN
-// =======================
 void KVStore::scan(const std::string& start,
                    const std::string& end){
 
@@ -289,6 +264,9 @@ void KVStore::scan(const std::string& start,
 
         for(auto& level : levels){
             for(auto& table : level){
+
+                if (key < table.getMinKey() || key > table.getMaxKey())
+                    continue;
 
                 GetResult res = table.get(key,value);
 
