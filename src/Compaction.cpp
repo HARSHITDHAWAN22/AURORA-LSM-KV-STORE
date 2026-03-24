@@ -29,7 +29,7 @@ static bool rangesOverlap(const SSTable& a,
 }
 
 // =======================
-//  FINAL CORRECT COMPACTION (FIXED)
+// 🔥 FINAL CORRECT COMPACTION (STRICT)
 // =======================
 uint64_t Compaction::run(std::vector<std::vector<SSTable>>& levels){
 
@@ -42,7 +42,6 @@ uint64_t Compaction::run(std::vector<std::vector<SSTable>>& levels){
 
         std::vector<size_t> overlapIndexes;
 
-        // detect overlap
         for (size_t i = 0; i < levels[level + 1].size(); ++i) {
             if (rangesOverlap(candidate,
                               levels[level + 1][i])) {
@@ -56,12 +55,9 @@ uint64_t Compaction::run(std::vector<std::vector<SSTable>>& levels){
                   << overlapIndexes.size()
                   << ")" << std::endl;
 
-        // =======================
-        //  CORRECT MERGE LOGIC
-        // =======================
         std::map<std::string, std::string> merged;
 
-        // newest first
+        // NEWEST FIRST
         std::vector<SSTable*> tables;
         tables.push_back(&candidate);
 
@@ -90,13 +86,25 @@ uint64_t Compaction::run(std::vector<std::vector<SSTable>>& levels){
                 std::string value(v, '\0');
                 in.read(&value[0], v);
 
-                // FINAL LOGIC
+                // 🔥 CRITICAL FIX
+                if (merged.find(key) != merged.end())
+                    continue;
+
                 if (value == MemTable::TOMBSTONE) {
-                    merged.erase(key);   // delete key permanently
+                    // mark deleted (do nothing, but block older values)
+                    merged[key] = MemTable::TOMBSTONE;
                 } else {
-                    merged[key] = value; // overwrite (latest wins)
+                    merged[key] = value;
                 }
             }
+        }
+
+        // Remove tombstones before writing
+        for (auto it = merged.begin(); it != merged.end();) {
+            if (it->second == MemTable::TOMBSTONE)
+                it = merged.erase(it);
+            else
+                ++it;
         }
 
         if (merged.empty()) {
@@ -104,9 +112,6 @@ uint64_t Compaction::run(std::vector<std::vector<SSTable>>& levels){
             return 0;
         }
 
-        // =======================
-        // WRITE NEW TABLE
-        // =======================
         std::string outPath =
             "data/L" + std::to_string(level + 1) + "_" +
             std::to_string(std::time(nullptr)) + ".dat";
@@ -117,9 +122,6 @@ uint64_t Compaction::run(std::vector<std::vector<SSTable>>& levels){
         SSTable reloaded(outPath, 10000, 3);
         uint64_t compactionBytes = reloaded.getFileSize();
 
-        // =======================
-        // REMOVE OLD TABLES
-        // =======================
         levels[level].erase(levels[level].begin());
 
         std::sort(overlapIndexes.rbegin(),
@@ -131,9 +133,6 @@ uint64_t Compaction::run(std::vector<std::vector<SSTable>>& levels){
             );
         }
 
-        // =======================
-        // INSERT NEW TABLE
-        // =======================
         auto& nextLevel = levels[level + 1];
 
         nextLevel.push_back(reloaded);

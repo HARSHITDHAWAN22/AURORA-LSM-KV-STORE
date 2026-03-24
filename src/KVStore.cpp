@@ -8,6 +8,7 @@
 #include <map>
 #include <future>
 #include <atomic>
+#include <mutex>
 
 #include "MemTable.h"
 #include "Logger.h"
@@ -30,13 +31,10 @@ void KVStore::saveStats() const {
 }
 
 // =======================
-// FIXED CONSTRUCTOR
-// =======================
 KVStore::KVStore(const std::string& configPath,
                  const std::string& strategy)
 
-    : tableCache(50),
-      configManager(configPath),
+    : configManager(configPath),
       memTable(nullptr),
       wal("metadata/wal.log"),
       levels(),
@@ -47,7 +45,9 @@ KVStore::KVStore(const std::string& configPath,
           0),
       manifest("metadata/manifest.txt"),
       sstableCounter(0),
+      tableCache(50),
       cache(10000),
+      blockCache(1000),
       running(false)
 {
     if (!configManager.load()) {
@@ -58,14 +58,12 @@ KVStore::KVStore(const std::string& configPath,
     benchmarkStart = std::chrono::steady_clock::now();
 
     memTable = new MemTable(configManager.getMemTableMaxEntries());
-
     wal.replay(*memTable);
 
     levels.resize(MAX_LEVELS);
     loadFromManifest();
 
     running = true;
-
     flushThread = std::thread(&KVStore::backgroundFlush, this);
 }
 
@@ -73,7 +71,6 @@ KVStore::KVStore(const std::string& configPath,
 KVStore::~KVStore() {
 
     running = false;
-
     saveStats();
 
     if (flushThread.joinable()) flushThread.join();
@@ -97,7 +94,6 @@ void KVStore::loadFromManifest() {
             );
 
             table.setStatsHook(this);
-
             levels[level].push_back(table);
             ++sstableCounter;
         }
@@ -120,7 +116,7 @@ void KVStore::put(const std::string& key,
 }
 
 // =======================
-// UPDATED GET (PARALLEL READS)
+// 🔥 FINAL GET (CORRECT LSM LOGIC)
 // =======================
 bool KVStore::get(const std::string& key,
                   std::string& value) {
@@ -128,7 +124,7 @@ bool KVStore::get(const std::string& key,
     value.clear();
     stats.totalGets++;
 
-    // Cache
+    // LRU cache
     if (cache.get(key, value)) {
         stats.cacheHits++;
         return true;
@@ -148,75 +144,85 @@ bool KVStore::get(const std::string& key,
         return true;
     }
 
-    // Parallel SSTable search
-    std::atomic<bool> found(false);
-    std::string resultValue;
-
-    std::vector<std::future<void>> futures;
-
+    // 🔥 LEVEL-WISE SEARCH (FIXED)
     for (size_t level = 0; level < levels.size(); level++) {
 
-        auto& tables = levels[level];
+        std::atomic<bool> found(false);
+        std::string levelResult;
+        std::mutex levelMutex;
 
-        for (auto& table : tables) {
+        std::vector<std::future<void>> futures;
+
+        for (auto& tableRef : levels[level]) {
 
             futures.push_back(std::async(std::launch::async,
-                [&, this, key, table]() {
+                [&, this, key, tableRef]() {
 
                 if (found.load()) return;
 
-                if (key < table.getMinKey() || key > table.getMaxKey())
+                if (key < tableRef.getMinKey() || key > tableRef.getMaxKey())
                     return;
 
-                if (!table.mightContain(key))
+                // block cache
+                std::string blockKey =
+                    tableRef.getFilePath() + "_" + key;
+
+                std::string cachedValue;
+                if (blockCache.get(blockKey, cachedValue)) {
+                    if (!found.exchange(true)) {
+                        std::lock_guard<std::mutex> lock(levelMutex);
+                        levelResult = cachedValue;
+                    }
+                    return;
+                }
+
+                // bloom
+                if (!tableRef.mightContain(key))
                     return;
 
                 std::string val;
+                GetResult res;
 
-                SSTable cached = table;
+                SSTable cached = tableRef;
 
-                if (tableCache.get(table.getFilePath(), cached)) {
-
-                    GetResult res = cached.get(key, val);
-
-                    if (res == GetResult::FOUND) {
-                        if (!found.exchange(true)) {
-                            resultValue = val;
-                        }
-                    }
-
-                    if (res == GetResult::DELETED) {
-                        found = true;
-                    }
-
+                if (tableCache.get(tableRef.getFilePath(), cached)) {
+                    res = cached.get(key, val);
                 } else {
+                    tableCache.put(tableRef.getFilePath(), tableRef);
+                    res = tableRef.get(key, val);
+                }
 
-                    tableCache.put(table.getFilePath(), table);
+                // 🔥 DELETE DOMINATES
+                if (res == GetResult::DELETED) {
+                    found = true;
+                    std::lock_guard<std::mutex> lock(levelMutex);
+                    levelResult.clear();
+                    return;
+                }
 
-                    GetResult res = table.get(key, val);
+                if (res == GetResult::FOUND) {
 
-                    if (res == GetResult::FOUND) {
-                        if (!found.exchange(true)) {
-                            resultValue = val;
-                        }
-                    }
+                    blockCache.put(blockKey, val);
 
-                    if (res == GetResult::DELETED) {
-                        found = true;
+                    if (!found.exchange(true)) {
+                        std::lock_guard<std::mutex> lock(levelMutex);
+                        levelResult = val;
                     }
                 }
             }));
         }
-    }
 
-    for (auto& f : futures) {
-        f.get();
-    }
+        for (auto& f : futures) f.get();
 
-    if (found) {
-        value = resultValue;
-        cache.put(key, value);
-        return true;
+        // stop at first level
+        if (found) {
+            if (!levelResult.empty()) {
+                value = levelResult;
+                cache.put(key, value);
+                return true;
+            }
+            return false;
+        }
     }
 
     return false;
@@ -260,7 +266,6 @@ void KVStore::flushMemTable() {
     );
 
     reloaded.setStatsHook(this);
-
     levels[0].push_back(reloaded);
 
     memTable->clear();

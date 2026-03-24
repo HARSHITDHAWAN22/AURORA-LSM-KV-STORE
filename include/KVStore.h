@@ -15,9 +15,8 @@
 #include "ManifestManager.h"
 #include "WAL.h"
 #include "LRUCache.h"
-
 #include "TableCache.h"
-
+#include "BlockCache.h"
 
 const int MAX_LEVELS = 4;
 
@@ -35,12 +34,11 @@ struct KVStats{
     uint64_t bloomNegatives = 0;
     uint64_t bloomFalsePositives = 0;
 
-     // Cache metrics
     uint64_t cacheHits = 0;
     uint64_t cacheMisses = 0;
 
     uint64_t benchmarkStartTime = 0;
-uint64_t benchmarkEndTime = 0;
+    uint64_t benchmarkEndTime = 0;
 };
 
 class KVStore : public SSTableStatsHook {
@@ -48,7 +46,6 @@ public:
 
     explicit KVStore(const std::string& configPath,
                      const std::string& strategy);
-                     
 
     ~KVStore();
 
@@ -66,7 +63,7 @@ public:
 
     void printStats() const;
 
-    // ---- Bloom filter hook functions ----
+    // Bloom hooks
     void recordBloomCheck() override {
         stats.bloomChecks++;
     }
@@ -78,7 +75,6 @@ public:
     void recordBloomFalsePositive() override {
         stats.bloomFalsePositives++;
     }
-    TableCache tableCache;
 
 private:
 
@@ -91,13 +87,11 @@ private:
 
     std::chrono::steady_clock::time_point lastCompactionTime;
 
-    // ---- statistics ----
+    // stats
     KVStats stats;
 
     ConfigManager configManager;
-
     MemTable* memTable;
-
     WAL wal;
 
     std::vector<std::vector<SSTable>> levels;
@@ -107,8 +101,10 @@ private:
 
     int sstableCounter;
 
-    // ---- LRU Cache ----
-    LRUCache cache;
+    // CACHE LAYER (FIXED ORDER)
+    TableCache tableCache;
+    LRUCache cache;          // moved before blockCache
+    BlockCache blockCache;   // LAST
 
     std::thread flushThread;
     std::thread compactionThread;
