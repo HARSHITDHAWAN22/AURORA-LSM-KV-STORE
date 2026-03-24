@@ -14,7 +14,7 @@ struct SSTableFooter {
 };
 
 // =======================
-// Constructor
+// Constructor 
 // =======================
 SSTable::SSTable(const std::string& filePath,
                  size_t bloomBitSize,
@@ -31,12 +31,26 @@ SSTable::SSTable(const std::string& filePath,
         return;
     }
 
+    // Load metadata
     loadFooterMetadata();
 
+    // Extract indexOffset from footer
+    uint64_t indexOffset = 0;
+    {
+        std::ifstream fin(filePath, std::ios::binary);
+        fin.seekg(-static_cast<std::streamoff>(sizeof(SSTableFooter)), std::ios::end);
+
+        SSTableFooter footer;
+        fin.read(reinterpret_cast<char*>(&footer), sizeof(footer));
+
+        indexOffset = footer.indexOffset;
+    }
+
+    // Rebuild bloom using ONLY data section
     in.seekg(0);
 
     while (in.good() &&
-           static_cast<uint64_t>(in.tellg()) < fileSize) {
+           static_cast<uint64_t>(in.tellg()) < indexOffset) {
 
         uint32_t k, v;
 
@@ -52,9 +66,6 @@ SSTable::SSTable(const std::string& filePath,
         in.seekg(v, std::ios::cur);
 
         bloom.add(key);
-
-        if (static_cast<uint64_t>(in.tellg()) >= fileSize)
-            break;
     }
 }
 
@@ -91,7 +102,7 @@ void SSTable::loadFooterMetadata() {
 }
 
 // =======================
-// ✅ BLOOM ENTRY POINT (ONLY PLACE FOR STATS)
+// Bloom filter entry
 // =======================
 bool SSTable::mightContain(const std::string& key) const {
 
@@ -131,8 +142,6 @@ bool SSTable::isBinarySSTable() const {
 
 // =======================
 bool SSTable::writeToDisk(const std::map<std::string, std::string>& data) {
-
-    bloom = BloomFilter(10000, 3);
 
     std::ofstream out(filePath, std::ios::binary | std::ios::trunc);
     if (!out.is_open()) {
@@ -213,8 +222,6 @@ bool SSTable::writeToDisk(const std::map<std::string, std::string>& data) {
 }
 
 // =======================
-// GET ENTRY
-// =======================
 GetResult SSTable::get(const std::string& key,
                        std::string& value) const {
 
@@ -225,7 +232,7 @@ GetResult SSTable::get(const std::string& key,
 }
 
 // =======================
-// ✅ FIXED: NO BLOOM HERE
+// Binary Search
 // =======================
 GetResult SSTable::getBinary(const std::string& key,
                              std::string& value) const {
@@ -263,13 +270,18 @@ GetResult SSTable::getBinary(const std::string& key,
         localIndex.emplace_back(ik, off);
     }
 
+    int left = 0, right = (int)localIndex.size() - 1;
     uint64_t startOffset = 0;
 
-    for (const auto& e : localIndex) {
-        if (e.key <= key)
-            startOffset = e.offset;
-        else
-            break;
+    while (left <= right) {
+        int mid = left + (right - left) / 2;
+
+        if (localIndex[mid].key <= key) {
+            startOffset = localIndex[mid].offset;
+            left = mid + 1;
+        } else {
+            right = mid - 1;
+        }
     }
 
     in.seekg(static_cast<std::streamoff>(startOffset));
@@ -304,7 +316,6 @@ GetResult SSTable::getBinary(const std::string& key,
             break;
     }
 
-    // false positive
     if (statsHook) {
         statsHook->recordBloomFalsePositive();
     }
