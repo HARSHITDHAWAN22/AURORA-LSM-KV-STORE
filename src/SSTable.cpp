@@ -13,6 +13,9 @@ struct SSTableFooter {
     uint64_t magic;
 };
 
+// BLOCK SIZE (NEW)
+constexpr size_t BLOCK_SIZE = 4;
+
 // =======================
 // Constructor 
 // =======================
@@ -31,10 +34,8 @@ SSTable::SSTable(const std::string& filePath,
         return;
     }
 
-    // Load metadata
     loadFooterMetadata();
 
-    // Extract indexOffset from footer
     uint64_t indexOffset = 0;
     {
         std::ifstream fin(filePath, std::ios::binary);
@@ -42,11 +43,9 @@ SSTable::SSTable(const std::string& filePath,
 
         SSTableFooter footer;
         fin.read(reinterpret_cast<char*>(&footer), sizeof(footer));
-
         indexOffset = footer.indexOffset;
     }
 
-    // Rebuild bloom using ONLY data section
     in.seekg(0);
 
     while (in.good() &&
@@ -102,19 +101,13 @@ void SSTable::loadFooterMetadata() {
 }
 
 // =======================
-// Bloom filter entry
-// =======================
 bool SSTable::mightContain(const std::string& key) const {
 
-    if (statsHook) {
-        statsHook->recordBloomCheck();
-    }
+    if (statsHook) statsHook->recordBloomCheck();
 
     bool result = bloom.mightContain(key);
 
-    if (!result && statsHook) {
-        statsHook->recordBloomNegative();
-    }
+    if (!result && statsHook) statsHook->recordBloomNegative();
 
     return result;
 }
@@ -141,6 +134,8 @@ bool SSTable::isBinarySSTable() const {
 }
 
 // =======================
+//UPDATED: BLOCK INDEX WRITE
+// =======================
 bool SSTable::writeToDisk(const std::map<std::string, std::string>& data) {
 
     std::ofstream out(filePath, std::ios::binary | std::ios::trunc);
@@ -149,12 +144,13 @@ bool SSTable::writeToDisk(const std::map<std::string, std::string>& data) {
         return false;
     }
 
-    constexpr size_t INDEX_INTERVAL = 64;
     sparseIndex.clear();
 
     std::string localMinKey;
     std::string localMaxKey;
     bool first = true;
+
+    size_t entryCount = 0;
 
     for (const auto& entry : data) {
 
@@ -164,14 +160,16 @@ bool SSTable::writeToDisk(const std::map<std::string, std::string>& data) {
         }
         localMaxKey = entry.first;
 
-        uint64_t offset = static_cast<uint64_t>(out.tellp());
-
-        if (sparseIndex.size() % INDEX_INTERVAL == 0) {
+        // BLOCK INDEX
+        if (entryCount % BLOCK_SIZE == 0) {
+            uint64_t offset = static_cast<uint64_t>(out.tellp());
             sparseIndex.emplace_back(entry.first, offset);
         }
 
-        uint32_t k = static_cast<uint32_t>(entry.first.size());
-        uint32_t v = static_cast<uint32_t>(entry.second.size());
+        entryCount++;
+
+        uint32_t k = entry.first.size();
+        uint32_t v = entry.second.size();
 
         out.write(reinterpret_cast<char*>(&k), sizeof(k));
         out.write(entry.first.data(), k);
@@ -182,24 +180,24 @@ bool SSTable::writeToDisk(const std::map<std::string, std::string>& data) {
     }
 
     uint64_t indexOffset = static_cast<uint64_t>(out.tellp());
-    uint32_t indexCount = static_cast<uint32_t>(sparseIndex.size());
+    uint32_t indexCount = sparseIndex.size();
 
     out.write(reinterpret_cast<char*>(&indexCount), sizeof(indexCount));
 
     for (const auto& e : sparseIndex) {
-        uint32_t k = static_cast<uint32_t>(e.key.size());
+        uint32_t k = e.key.size();
         out.write(reinterpret_cast<char*>(&k), sizeof(k));
         out.write(e.key.data(), k);
         out.write(reinterpret_cast<const char*>(&e.offset), sizeof(e.offset));
     }
 
     uint64_t minKeyOffset = static_cast<uint64_t>(out.tellp());
-    uint32_t minSize = static_cast<uint32_t>(localMinKey.size());
+    uint32_t minSize = localMinKey.size();
     out.write(reinterpret_cast<char*>(&minSize), sizeof(minSize));
     out.write(localMinKey.data(), minSize);
 
     uint64_t maxKeyOffset = static_cast<uint64_t>(out.tellp());
-    uint32_t maxSize = static_cast<uint32_t>(localMaxKey.size());
+    uint32_t maxSize = localMaxKey.size();
     out.write(reinterpret_cast<char*>(&maxSize), sizeof(maxSize));
     out.write(localMaxKey.data(), maxSize);
 
@@ -215,24 +213,12 @@ bool SSTable::writeToDisk(const std::map<std::string, std::string>& data) {
 
     out.write(reinterpret_cast<char*>(&footer), sizeof(footer));
 
-    out.flush();
     out.close();
-
     return true;
 }
 
 // =======================
-GetResult SSTable::get(const std::string& key,
-                       std::string& value) const {
-
-    if (!minKey.empty() && (key < minKey || key > maxKey))
-        return GetResult::NOT_FOUND;
-
-    return getBinary(key, value);
-}
-
-// =======================
-// Binary Search
+// UPDATED: BLOCK LIMITED SEARCH
 // =======================
 GetResult SSTable::getBinary(const std::string& key,
                              std::string& value) const {
@@ -258,7 +244,6 @@ GetResult SSTable::getBinary(const std::string& key,
     localIndex.reserve(indexCount);
 
     for (uint32_t i = 0; i < indexCount; i++) {
-
         uint32_t k;
         uint64_t off;
 
@@ -270,12 +255,12 @@ GetResult SSTable::getBinary(const std::string& key,
         localIndex.emplace_back(ik, off);
     }
 
-    int left = 0, right = (int)localIndex.size() - 1;
+    //Binary search
+    int left = 0, right = localIndex.size() - 1;
     uint64_t startOffset = 0;
 
     while (left <= right) {
-        int mid = left + (right - left) / 2;
-
+        int mid = (left + right) / 2;
         if (localIndex[mid].key <= key) {
             startOffset = localIndex[mid].offset;
             left = mid + 1;
@@ -284,10 +269,19 @@ GetResult SSTable::getBinary(const std::string& key,
         }
     }
 
-    in.seekg(static_cast<std::streamoff>(startOffset));
+    //Find next block boundary
+    uint64_t nextBlockOffset = footer.indexOffset;
+    for (const auto& e : localIndex) {
+        if (e.offset > startOffset) {
+            nextBlockOffset = e.offset;
+            break;
+        }
+    }
+
+    in.seekg(startOffset);
 
     while (in.good() &&
-           static_cast<uint64_t>(in.tellg()) < footer.indexOffset) {
+           static_cast<uint64_t>(in.tellg()) < nextBlockOffset) {
 
         uint32_t k, v;
 
@@ -304,7 +298,6 @@ GetResult SSTable::getBinary(const std::string& key,
         in.read(&curVal[0], v);
 
         if (curKey == key) {
-
             if (curVal == MemTable::TOMBSTONE)
                 return GetResult::DELETED;
 
@@ -316,11 +309,19 @@ GetResult SSTable::getBinary(const std::string& key,
             break;
     }
 
-    if (statsHook) {
-        statsHook->recordBloomFalsePositive();
-    }
+    if (statsHook) statsHook->recordBloomFalsePositive();
 
     return GetResult::NOT_FOUND;
+}
+
+// =======================
+GetResult SSTable::get(const std::string& key,
+                       std::string& value) const {
+
+    if (!minKey.empty() && (key < minKey || key > maxKey))
+        return GetResult::NOT_FOUND;
+
+    return getBinary(key, value);
 }
 
 // =======================
