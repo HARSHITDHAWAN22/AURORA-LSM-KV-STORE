@@ -252,3 +252,33 @@ Tue Mar 24 05:31:42 2026
  [INFO] WAL replay started
 Tue Mar 24 05:31:42 2026
  [INFO] WAL replay completed. Operations replayed: 0
+Tue Mar 24 05:37:03 2026
+ [INFO] WAL initialized at path: metadata/wal.log
+Tue Mar 24 05:37:03 2026
+ [INFO] ManifestManager initialized at path: metadata/manifest.txt
+Tue Mar 24 05:37:03 2026
+ [INFO] MemTable initialized with maxEntries=5000
+Tue Mar 24 05:37:03 2026
+ [INFO] WAL replay started
+Tue Mar 24 05:37:03 2026
+ [INFO] WAL replay completed. Operations replayed: 0
+Tue Mar 24 17:40:20 2026
+ [INFO] WAL initialized at path: metadata/wal.log
+Tue Mar 24 17:40:20 2026
+ [INFO] ManifestManager initialized at path: metadata/manifest.txt
+Tue Mar 24 17:40:20 2026
+ [INFO] MemTable initialized with maxEntries=5000
+Tue Mar 24 17:40:20 2026
+ [INFO] WAL replay started
+Tue Mar 24 17:40:20 2026
+ [INFO] WAL replay completed. Operations replayed: 0
+Tue Mar 24 19:10:09 2026
+ [INFO] WAL initialized at path: metadata/wal.log
+Tue Mar 24 19:10:09 2026
+ [INFO] ManifestManager initialized at path: metadata/manifest.txt
+Tue Mar 24 19:10:09 2026
+ [INFO] MemTable initialized with maxEntries=5000
+Tue Mar 24 19:10:09 2026
+ [INFO] WAL replay started
+Tue Mar 24 19:10:09 2026
+ [INFO] WAL replay completed. Operations replayed: 0

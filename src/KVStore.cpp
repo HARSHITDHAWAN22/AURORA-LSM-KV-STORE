@@ -6,6 +6,8 @@
 #include <algorithm>
 #include <filesystem>
 #include <map>
+#include <future>
+#include <atomic>
 
 #include "MemTable.h"
 #include "Logger.h"
@@ -118,7 +120,7 @@ void KVStore::put(const std::string& key,
 }
 
 // =======================
-//  FINAL FIXED GET
+// UPDATED GET (PARALLEL READS)
 // =======================
 bool KVStore::get(const std::string& key,
                   std::string& value) {
@@ -126,6 +128,7 @@ bool KVStore::get(const std::string& key,
     value.clear();
     stats.totalGets++;
 
+    // Cache
     if (cache.get(key, value)) {
         stats.cacheHits++;
         return true;
@@ -133,6 +136,7 @@ bool KVStore::get(const std::string& key,
 
     stats.cacheMisses++;
 
+    // MemTable
     std::string memVal;
     if (memTable->get(key, memVal)) {
 
@@ -144,99 +148,75 @@ bool KVStore::get(const std::string& key,
         return true;
     }
 
+    // Parallel SSTable search
+    std::atomic<bool> found(false);
+    std::string resultValue;
+
+    std::vector<std::future<void>> futures;
+
     for (size_t level = 0; level < levels.size(); level++) {
 
         auto& tables = levels[level];
 
-        if (level == 0) {
+        for (auto& table : tables) {
 
-            for (auto it = tables.rbegin(); it != tables.rend(); ++it) {
+            futures.push_back(std::async(std::launch::async,
+                [&, this, key, table]() {
 
-                if (key < it->getMinKey() || key > it->getMaxKey())
-                    continue;
+                if (found.load()) return;
 
-                SSTable& table = *it;
+                if (key < table.getMinKey() || key > table.getMaxKey())
+                    return;
 
-                // 🔥 ONLY THIS (NO manual stats)
                 if (!table.mightContain(key))
-                    continue;
+                    return;
+
+                std::string val;
 
                 SSTable cached = table;
 
-                if (tableCache.get(it->getFilePath(), cached)) {
+                if (tableCache.get(table.getFilePath(), cached)) {
 
-                    GetResult res = cached.get(key, value);
+                    GetResult res = cached.get(key, val);
 
                     if (res == GetResult::FOUND) {
-                        cache.put(key, value);
-                        return true;
+                        if (!found.exchange(true)) {
+                            resultValue = val;
+                        }
                     }
 
                     if (res == GetResult::DELETED) {
-                        return false;
+                        found = true;
                     }
 
                 } else {
 
-                    tableCache.put(it->getFilePath(), table);
+                    tableCache.put(table.getFilePath(), table);
 
-                    GetResult res = table.get(key, value);
+                    GetResult res = table.get(key, val);
 
                     if (res == GetResult::FOUND) {
-                        cache.put(key, value);
-                        return true;
+                        if (!found.exchange(true)) {
+                            resultValue = val;
+                        }
                     }
 
                     if (res == GetResult::DELETED) {
-                        return false;
+                        found = true;
                     }
                 }
-            }
+            }));
         }
-        else {
+    }
 
-            for (auto& t : tables) {
+    for (auto& f : futures) {
+        f.get();
+    }
 
-                if (key < t.getMinKey() || key > t.getMaxKey())
-                    continue;
-
-                SSTable& table = t;
-
-                if (!table.mightContain(key))
-                    continue;
-
-                SSTable cached = table;
-
-                if (tableCache.get(t.getFilePath(), cached)) {
-
-                    GetResult res = cached.get(key, value);
-
-                    if (res == GetResult::FOUND) {
-                        cache.put(key, value);
-                        return true;
-                    }
-
-                    if (res == GetResult::DELETED) {
-                        return false;
-                    }
-
-                } else {
-
-                    tableCache.put(t.getFilePath(), table);
-
-                    GetResult res = table.get(key, value);
-
-                    if (res == GetResult::FOUND) {
-                        cache.put(key, value);
-                        return true;
-                    }
-
-                    if (res == GetResult::DELETED) {
-                        return false;
-                    }
-                }
-            }
-        }
+    if (found) {
+        value = resultValue;
+        cache.put(key, value);
+        return true;
     }
 
     return false;

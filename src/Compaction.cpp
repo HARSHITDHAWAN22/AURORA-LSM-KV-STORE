@@ -3,10 +3,12 @@
 #include <vector>
 #include <ctime>
 #include <algorithm>
+#include <fstream>
+#include <map>
+
 #include "SSTableIterator.h"
-#include "MergeIterator.h"
 #include "MemTable.h"
-#include "SSTableBuilder.h"
+#include "SSTable.h"
 
 Compaction::Compaction(Strategy strategy, int maxFilesPerLevel)
     : strategy(strategy),
@@ -26,6 +28,9 @@ static bool rangesOverlap(const SSTable& a,
              b.getMaxKey() < a.getMinKey());
 }
 
+// =======================
+//  FINAL CORRECT COMPACTION (FIXED)
+// =======================
 uint64_t Compaction::run(std::vector<std::vector<SSTable>>& levels){
 
     for (size_t level = 0; level + 1 < levels.size(); ++level) {
@@ -33,12 +38,11 @@ uint64_t Compaction::run(std::vector<std::vector<SSTable>>& levels){
         if (levels[level].empty())
             continue;
 
-        //Pick oldest file (simple + interview safe)
         SSTable& candidate = levels[level].front();
 
         std::vector<size_t> overlapIndexes;
 
-        // Detect overlapping files in next level
+        // detect overlap
         for (size_t i = 0; i < levels[level + 1].size(); ++i) {
             if (rangesOverlap(candidate,
                               levels[level + 1][i])) {
@@ -47,70 +51,77 @@ uint64_t Compaction::run(std::vector<std::vector<SSTable>>& levels){
         }
 
         std::cout << "Compacting Level "
-                  << level
-                  << " -> "
-                  << (level + 1)
+                  << level << " -> " << (level + 1)
                   << " (overlap files: "
                   << overlapIndexes.size()
-                  << ")"
-                  << std::endl;
+                  << ")" << std::endl;
 
-        std::vector<SSTableIterator> iters;
+        // =======================
+        //  CORRECT MERGE LOGIC
+        // =======================
+        std::map<std::string, std::string> merged;
 
-        // Add candidate from current level
-        iters.emplace_back(candidate);
+        // newest first
+        std::vector<SSTable*> tables;
+        tables.push_back(&candidate);
 
-        // Add only overlapping files
         for (size_t idx : overlapIndexes) {
-            iters.emplace_back(levels[level + 1][idx]);
+            tables.push_back(&levels[level + 1][idx]);
         }
 
-        std::vector<Iterator*> inputs;
-        for (auto& it : iters)
-            inputs.push_back(&it);
+        for (auto* table : tables) {
 
-        MergeIterator merge(inputs);
+            std::ifstream in(table->getFilePath(), std::ios::binary);
+            if (!in.is_open()) continue;
 
-        std::vector<std::pair<std::string,std::string>> mergedData;
-        mergedData.reserve(1024);
+            while (in.good()) {
 
-        while (merge.valid()) {
-            if (merge.value() != MemTable::TOMBSTONE) {
-                mergedData.emplace_back(
-                    merge.key(),
-                    merge.value()
-                );
+                uint32_t k, v;
+
+                if (!in.read(reinterpret_cast<char*>(&k), sizeof(k)))
+                    break;
+
+                std::string key(k, '\0');
+                in.read(&key[0], k);
+
+                if (!in.read(reinterpret_cast<char*>(&v), sizeof(v)))
+                    break;
+
+                std::string value(v, '\0');
+                in.read(&value[0], v);
+
+                // FINAL LOGIC
+                if (value == MemTable::TOMBSTONE) {
+                    merged.erase(key);   // delete key permanently
+                } else {
+                    merged[key] = value; // overwrite (latest wins)
+                }
             }
-            merge.next();
         }
 
-        if (mergedData.empty()) {
-            // Nothing to write
+        if (merged.empty()) {
             levels[level].erase(levels[level].begin());
             return 0;
         }
 
+        // =======================
+        // WRITE NEW TABLE
+        // =======================
         std::string outPath =
             "data/L" + std::to_string(level + 1) + "_" +
             std::to_string(std::time(nullptr)) + ".dat";
 
-        std::map<std::string,std::string> ordered;
-        for (auto& kv : mergedData) {
-            ordered.emplace(std::move(kv.first),
-                            std::move(kv.second));
-        }
-
         SSTable writer(outPath, 10000, 3);
-        writer.writeToDisk(ordered);
+        writer.writeToDisk(merged);
 
         SSTable reloaded(outPath, 10000, 3);
         uint64_t compactionBytes = reloaded.getFileSize();
 
-
-        // Remove candidate from current level
+        // =======================
+        // REMOVE OLD TABLES
+        // =======================
         levels[level].erase(levels[level].begin());
 
-        //  Remove only overlapping files from next level
         std::sort(overlapIndexes.rbegin(),
                   overlapIndexes.rend());
 
@@ -120,7 +131,9 @@ uint64_t Compaction::run(std::vector<std::vector<SSTable>>& levels){
             );
         }
 
-        //  Insert new file in sorted order (L1+ non-overlap)
+        // =======================
+        // INSERT NEW TABLE
+        // =======================
         auto& nextLevel = levels[level + 1];
 
         nextLevel.push_back(reloaded);
@@ -133,8 +146,7 @@ uint64_t Compaction::run(std::vector<std::vector<SSTable>>& levels){
         });
 
         return compactionBytes;
- // One compaction per call
     }
-    return 0;
 
+    return 0;
 }
