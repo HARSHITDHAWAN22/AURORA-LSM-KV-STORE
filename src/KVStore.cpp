@@ -100,23 +100,36 @@ void KVStore::loadFromManifest() {
     }
 }
 
-// =======================
 void KVStore::put(const std::string& key,
                   const std::string& value) {
 
+    std::cout << "[PUT] Start: " << key << "\n";
     stats.totalPuts++;
 
+    std::cout << "[PUT] WAL write...\n";
     wal.logPut(key, value);
+    std::cout << "[PUT] WAL done\n";
+
+    std::cout << "[PUT] MemTable insert...\n";
     memTable->put(key, value);
+    std::cout << "[PUT] MemTable done\n";
 
+    std::cout << "[PUT] Cache put...\n";
     cache.put(key, value);
+    std::cout << "[PUT] Cache done\n";
 
-    if (memTable->isFull())
+    std::cout << "[PUT] Full check...\n";
+    if (memTable->isFull()) {
+        std::cout << "[PUT] MemTable full -> flushing...\n";
         flushMemTable();
+        std::cout << "[PUT] Flush done\n";
+    }
+
+    std::cout << "[PUT] End: " << key << "\n";
 }
 
 // =======================
-// 🔥 FINAL GET (CORRECT LSM LOGIC)
+// FINAL GET (CORRECT LSM LOGIC)
 // =======================
 bool KVStore::get(const std::string& key,
                   std::string& value) {
@@ -144,7 +157,7 @@ bool KVStore::get(const std::string& key,
         return true;
     }
 
-    // 🔥 LEVEL-WISE SEARCH (FIXED)
+    //  LEVEL-WISE SEARCH (FIXED)
     for (size_t level = 0; level < levels.size(); level++) {
 
         std::atomic<bool> found(false);
@@ -192,7 +205,7 @@ bool KVStore::get(const std::string& key,
                     res = tableRef.get(key, val);
                 }
 
-                // 🔥 DELETE DOMINATES
+                //  DELETE DOMINATES
                 if (res == GetResult::DELETED) {
                     found = true;
                     std::lock_guard<std::mutex> lock(levelMutex);

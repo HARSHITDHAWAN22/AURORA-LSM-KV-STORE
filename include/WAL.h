@@ -4,14 +4,15 @@
 #include <string>
 #include <vector>
 #include <cstdint>
-#include<mutex>
+#include <mutex>
+
 class MemTable;
 
-class WAL{
+class WAL {
 public:
-    explicit WAL(const std::string& path,size_t batchSize = 10);
+    explicit WAL(const std::string& path, size_t batchSize = 10);
 
-    void logPut(const std::string& key,const std::string& value);
+    void logPut(const std::string& key, const std::string& value);
     void logDelete(const std::string& key);
 
     void replay(MemTable& memTable);
@@ -23,9 +24,10 @@ private:
     std::string path;
     std::vector<char> buffer;   // binary buffer
     size_t batchSize;
-std::mutex mtx;
+    std::mutex mtx;
 
     void appendUInt32(uint32_t v);
+    void flushUnlocked();   // NEW
 };
 
 #endif
