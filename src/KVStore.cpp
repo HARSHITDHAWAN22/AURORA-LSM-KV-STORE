@@ -103,37 +103,145 @@ void KVStore::loadFromManifest() {
 void KVStore::put(const std::string& key,
                   const std::string& value) {
 
-    std::cout << "[PUT] Start: " << key << "\n";
+    //std::cout << "[PUT] Start: " << key << "\n";
     stats.totalPuts++;
 
-    std::cout << "[PUT] WAL write...\n";
+    //std::cout << "[PUT] WAL write...\n";
     wal.logPut(key, value);
-    std::cout << "[PUT] WAL done\n";
+   // std::cout << "[PUT] WAL done\n";
 
-    std::cout << "[PUT] MemTable insert...\n";
+    //std::cout << "[PUT] MemTable insert...\n";
     memTable->put(key, value);
-    std::cout << "[PUT] MemTable done\n";
+   // std::cout << "[PUT] MemTable done\n";
 
-    std::cout << "[PUT] Cache put...\n";
+    //std::cout << "[PUT] Cache put...\n";
     cache.put(key, value);
-    std::cout << "[PUT] Cache done\n";
+    //std::cout << "[PUT] Cache done\n";
 
-    std::cout << "[PUT] Full check...\n";
+   // std::cout << "[PUT] Full check...\n";
     if (memTable->isFull()) {
-        std::cout << "[PUT] MemTable full -> flushing...\n";
+        //std::cout << "[PUT] MemTable full -> flushing...\n";
         flushMemTable();
-        std::cout << "[PUT] Flush done\n";
+        //std::cout << "[PUT] Flush done\n";
     }
 
-    std::cout << "[PUT] End: " << key << "\n";
+//    std::cout << "[PUT] End: " << key << "\n";
 }
 
 // =======================
 // FINAL GET (CORRECT LSM LOGIC)
 // =======================
-bool KVStore::get(const std::string& key,
-                  std::string& value) {
+// bool KVStore::get(const std::string& key,
+//                   std::string& value) {
 
+//     value.clear();
+//     stats.totalGets++;
+
+//     // LRU cache
+//     if (cache.get(key, value)) {
+//         stats.cacheHits++;
+//         return true;
+//     }
+
+//     stats.cacheMisses++;
+
+//     // MemTable
+//     std::string memVal;
+//     if (memTable->get(key, memVal)) {
+
+//         if (memVal == MemTable::TOMBSTONE)
+//             return false;
+
+//         value = memVal;
+//         cache.put(key, value);
+//         return true;
+//     }
+
+//     //  LEVEL-WISE SEARCH (FIXED)
+//     for (size_t level = 0; level < levels.size(); level++) {
+
+//         std::atomic<bool> found(false);
+//         std::string levelResult;
+//         std::mutex levelMutex;
+
+//         std::vector<std::future<void>> futures;
+
+//         for (auto& tableRef : levels[level]) {
+
+//             futures.push_back(std::async(std::launch::async,
+//                 [&, this, key, tableRef]() {
+
+//                 if (found.load()) return;
+
+//                 if (key < tableRef.getMinKey() || key > tableRef.getMaxKey())
+//                     return;
+
+//                 // block cache
+//                 std::string blockKey =
+//                     tableRef.getFilePath() + "_" + key;
+
+//                 std::string cachedValue;
+//                 if (blockCache.get(blockKey, cachedValue)) {
+//                     if (!found.exchange(true)) {
+//                         std::lock_guard<std::mutex> lock(levelMutex);
+//                         levelResult = cachedValue;
+//                     }
+//                     return;
+//                 }
+
+//                 // bloom
+//                 if (!tableRef.mightContain(key))
+//                     return;
+
+//                 std::string val;
+//                 GetResult res;
+
+//                 SSTable cached = tableRef;
+
+//                 if (tableCache.get(tableRef.getFilePath(), cached)) {
+//                     res = cached.get(key, val);
+//                 } else {
+//                     tableCache.put(tableRef.getFilePath(), tableRef);
+//                     res = tableRef.get(key, val);
+//                 }
+
+//                 //  DELETE DOMINATES
+//                 if (res == GetResult::DELETED) {
+//                     found = true;
+//                     std::lock_guard<std::mutex> lock(levelMutex);
+//                     levelResult.clear();
+//                     return;
+//                 }
+
+//                 if (res == GetResult::FOUND) {
+
+//                     blockCache.put(blockKey, val);
+
+//                     if (!found.exchange(true)) {
+//                         std::lock_guard<std::mutex> lock(levelMutex);
+//                         levelResult = val;
+//                     }
+//                 }
+//             }));
+//         }
+
+//         for (auto& f : futures) f.get();
+
+//         // stop at first level
+//         if (found) {
+//             if (!levelResult.empty()) {
+//                 value = levelResult;
+//                 cache.put(key, value);
+//                 return true;
+//             }
+//             return false;
+//         }
+//     }
+
+//     return false;
+// }
+
+bool KVStore::get(const std::string& key, std::string& value) {
     value.clear();
     stats.totalGets++;
 
@@ -148,7 +256,6 @@ bool KVStore::get(const std::string& key,
     // MemTable
     std::string memVal;
     if (memTable->get(key, memVal)) {
-
         if (memVal == MemTable::TOMBSTONE)
             return false;
 
@@ -157,84 +264,51 @@ bool KVStore::get(const std::string& key,
         return true;
     }
 
-    //  LEVEL-WISE SEARCH (FIXED)
+    // LEVEL-WISE SEARCH (sequential, stable)
     for (size_t level = 0; level < levels.size(); level++) {
-
-        std::atomic<bool> found(false);
-        std::string levelResult;
-        std::mutex levelMutex;
-
-        std::vector<std::future<void>> futures;
 
         for (auto& tableRef : levels[level]) {
 
-            futures.push_back(std::async(std::launch::async,
-                [&, this, key, tableRef]() {
+            if (key < tableRef.getMinKey() || key > tableRef.getMaxKey())
+                continue;
 
-                if (found.load()) return;
+            // block cache
+            std::string blockKey = tableRef.getFilePath() + "_" + key;
+            std::string cachedValue;
 
-                if (key < tableRef.getMinKey() || key > tableRef.getMaxKey())
-                    return;
-
-                // block cache
-                std::string blockKey =
-                    tableRef.getFilePath() + "_" + key;
-
-                std::string cachedValue;
-                if (blockCache.get(blockKey, cachedValue)) {
-                    if (!found.exchange(true)) {
-                        std::lock_guard<std::mutex> lock(levelMutex);
-                        levelResult = cachedValue;
-                    }
-                    return;
-                }
-
-                // bloom
-                if (!tableRef.mightContain(key))
-                    return;
-
-                std::string val;
-                GetResult res;
-
-                SSTable cached = tableRef;
-
-                if (tableCache.get(tableRef.getFilePath(), cached)) {
-                    res = cached.get(key, val);
-                } else {
-                    tableCache.put(tableRef.getFilePath(), tableRef);
-                    res = tableRef.get(key, val);
-                }
-
-                //  DELETE DOMINATES
-                if (res == GetResult::DELETED) {
-                    found = true;
-                    std::lock_guard<std::mutex> lock(levelMutex);
-                    levelResult.clear();
-                    return;
-                }
-
-                if (res == GetResult::FOUND) {
-
-                    blockCache.put(blockKey, val);
-
-                    if (!found.exchange(true)) {
-                        std::lock_guard<std::mutex> lock(levelMutex);
-                        levelResult = val;
-                    }
-                }
-            }));
-        }
-
-        for (auto& f : futures) f.get();
-
-        // stop at first level
-        if (found) {
-            if (!levelResult.empty()) {
-                value = levelResult;
+            if (blockCache.get(blockKey, cachedValue)) {
+                value = cachedValue;
                 cache.put(key, value);
                 return true;
             }
-            return false;
+
+            // bloom
+            if (!tableRef.mightContain(key))
+                continue;
+
+            std::string val;
+            GetResult res;
+
+            SSTable cached = tableRef;
+
+            if (tableCache.get(tableRef.getFilePath(), cached)) {
+                res = cached.get(key, val);
+            } else {
+                tableCache.put(tableRef.getFilePath(), tableRef);
+                res = tableRef.get(key, val);
+            }
+
+            // DELETE dominates
+            if (res == GetResult::DELETED) {
+                return false;
+            }
+
+            if (res == GetResult::FOUND) {
+                blockCache.put(blockKey, val);
+                value = val;
+                cache.put(key, value);
+                return true;
+            }
         }
     }
 

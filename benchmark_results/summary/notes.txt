@@ -1,0 +1,13 @@
+Leveling - Mixed - 50000 ops
+- Throughput: 5092.49 ops/sec
+- PUT Throughput: 2544.74 ops/sec
+- GET Throughput: 2295.85 ops/sec
+- Cache Hit Rate: 83.81%
+- Bloom Checks: 507060
+- Bloom Negatives: 503416
+- Bloom False Positives: 0
+
+Key Insight:
+- AuroraKV remained stable under larger workload after fixing read-path thread explosion.
+- Bloom filters provided major read-path savings.
+- Cache effectiveness remained strong but declined under larger working set, as expected.

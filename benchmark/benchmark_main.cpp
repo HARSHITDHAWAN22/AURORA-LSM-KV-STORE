@@ -34,7 +34,7 @@ int main() {
 
     BenchmarkConfig config;
 
-    config.total_ops = 100;
+    config.total_ops = 100000;
     config.workload = WorkloadType::MIXED;
     config.key_dist = KeyDistribution::RANDOM;
 
@@ -58,23 +58,23 @@ int main() {
     for (auto& op : ops) {
         count++;
 
-        std::cout << "Running op #" << count << " ... ";
+      //  std::cout << "Running op #" << count << " ... ";
 
         if (op.type == OperationType::PUT) {
-            std::cout << "PUT(" << op.key << ")\n";
+           // std::cout << "PUT(" << op.key << ")\n";
             db.put(op.key, op.value);
         }
         else if (op.type == OperationType::GET) {
-            std::cout << "GET(" << op.key << ")\n";
+          //  std::cout << "GET(" << op.key << ")\n";
             std::string value;
             db.get(op.key, value);
         }
         else {
-            std::cout << "DELETE(" << op.key << ")\n";
+          //  std::cout << "DELETE(" << op.key << ")\n";
             db.deleteKey(op.key);
         }
 
-        std::cout << "Done op #" << count << "\n";
+       // std::cout << "Done op #" << count << "\n";
     }
 
     std::cout << "[7] Flushing DB...\n";

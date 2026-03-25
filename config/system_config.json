@@ -1,7 +1,7 @@
 {
   "storage":{
     "memtable":{
-      "max_entries": 5000
+      "max_entries": 50
     },
     "sstable":{
       "data_directory": "data/sstables"

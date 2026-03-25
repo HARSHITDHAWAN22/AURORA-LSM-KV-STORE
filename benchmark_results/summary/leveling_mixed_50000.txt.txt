@@ -1,0 +1,25 @@
+Strategy: Leveling
+Workload: Mixed
+Total Ops: 50000
+
+Execution Time: 9.81837 sec
+Overall Throughput: 5092.49 ops/sec
+
+PUT Throughput: 2544.74 ops/sec
+GET Throughput: 2295.85 ops/sec
+DELETE Throughput: Approx. 252 ops/sec
+
+Cache Hit Rate: 83.81%
+Bloom Checks: 507060
+Bloom Negatives: 503416
+Bloom False Positives: 0
+
+Flushes: Likely occurred multiple times
+Compactions: Likely occurred
+
+Observations:
+- AuroraKV remained stable at 50,000 mixed operations after fixing read-path thread explosion
+- Throughput stayed above 5K ops/sec under a larger workload
+- Cache hit rate dropped compared to the 10K run, indicating a more realistic working set and less repeated reuse
+- Bloom filter prevented most unnecessary SSTable reads
+- Zero bloom false positives were observed in this run
