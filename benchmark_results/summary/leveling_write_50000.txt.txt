@@ -1,0 +1,25 @@
+Strategy: Leveling
+Workload: Write-heavy
+Total Ops: 50000
+
+Execution Time: 12.2795 sec
+Overall Throughput: 4071.82 ops/sec
+
+PUT Throughput: 3239.64 ops/sec
+GET Throughput: 619.54 ops/sec
+DELETE Throughput: Approx. 212.64 ops/sec
+
+Cache Hit Rate: 67.62%
+Bloom Checks: 463319
+Bloom Negatives: 460862
+Bloom False Positives: 4
+
+Flushes: Frequent
+Compactions: Frequent
+
+Observations:
+- Leveling handled write-heavy workload with strong PUT throughput at medium scale
+- Throughput dropped compared to 10K due to increased compaction and disk activity
+- Cache hit rate decreased significantly as working set grew
+- Bloom filter performed many checks, avoiding unnecessary SSTable reads
+- Very low bloom false positives observed

@@ -35,11 +35,11 @@ int main() {
     BenchmarkConfig config;
 
     config.total_ops = 100000;
-    config.workload = WorkloadType::MIXED;
+    config.workload = WorkloadType::WRITE_HEAVY;
     config.key_dist = KeyDistribution::RANDOM;
 
-    config.put_ratio = 0.5;
-    config.get_ratio = 0.45;
+    config.put_ratio = 0.8;
+    config.get_ratio = 0.15;
     config.delete_ratio = 0.05;
 
     std::cout << "[2] Generating workload...\n";
@@ -48,7 +48,7 @@ int main() {
     std::cout << "[3] Workload generated: " << ops.size() << " ops\n";
 
     std::cout << "[4] Initializing KVStore...\n";
-    KVStore db("config/system_config.json", "tiering");
+    KVStore db("config/system_config.json", "leveling");
     std::cout << "[5] KVStore initialized successfully.\n";
 
     std::cout << "[6] Running benchmark...\n";

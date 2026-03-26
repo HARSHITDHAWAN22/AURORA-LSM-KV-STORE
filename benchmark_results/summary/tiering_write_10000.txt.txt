@@ -1,0 +1,25 @@
+Strategy: Tiering
+Workload: Write-heavy
+Total Ops: 10000
+
+Execution Time: 2.8108 sec
+Overall Throughput: 3557.70 ops/sec
+
+PUT Throughput: 2852.03 ops/sec
+GET Throughput: 532.78 ops/sec
+DELETE Throughput: Approx. 172.89 ops/sec
+
+Cache Hit Rate: 99.80%
+Bloom Checks: 72
+Bloom Negatives: 70
+Bloom False Positives: 0
+
+Flushes: Likely occurred
+Compactions: Likely occurred
+
+Observations:
+- Tiering handled write-heavy workload slightly better than leveling at 10K scale
+- PUT throughput remained the dominant contributor to overall performance
+- Cache hit rate stayed extremely high due to repeated accesses
+- Bloom filter activity remained low, as expected for a write-heavy workload
+- No bloom false positives were observed in this run
