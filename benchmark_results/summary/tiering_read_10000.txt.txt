@@ -1,0 +1,25 @@
+Strategy: Tiering
+Workload: Read-heavy
+Total Ops: 10000
+
+Execution Time: 3.37461 sec
+Overall Throughput: 2963.31 ops/sec
+
+PUT Throughput: 2362.03 ops/sec
+GET Throughput: 455.88 ops/sec
+DELETE Throughput: Approx. 145.40 ops/sec
+
+Cache Hit Rate: 99.87%
+Bloom Checks: 0
+Bloom Negatives: 0
+Bloom False Positives: 0
+
+Flushes: Minimal
+Compactions: Minimal
+
+Observations:
+- Tiering completed the read-heavy 10K workload successfully
+- Cache hit rate remained extremely high, so most reads were served from memory/cache
+- Bloom filter was not exercised, indicating little to no SSTable traversal
+- Tiering slightly outperformed leveling at this scale, but the difference mainly reflects in-memory path behavior
+- This workload does not yet stress deep read amplification

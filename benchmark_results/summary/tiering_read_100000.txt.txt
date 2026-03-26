@@ -1,0 +1,25 @@
+Strategy: Tiering
+Workload: Read-heavy
+Total Ops: 100000
+
+Execution Time: 34.5512 sec
+Overall Throughput: 2894.26 ops/sec
+
+PUT Throughput: 2315.30 ops/sec
+GET Throughput: 433.59 ops/sec
+DELETE Throughput: Approx. 145.37 ops/sec
+
+Cache Hit Rate: 46.88%
+Bloom Checks: 2976528
+Bloom Negatives: 2968587
+Bloom False Positives: 6
+
+Flushes: Frequent
+Compactions: Frequent
+
+Observations:
+- Tiering completed the read-heavy 100K workload successfully
+- Cache hit rate dropped significantly due to large working set
+- Bloom filter handled nearly 3 million checks efficiently
+- False positives remained extremely low
+- Performance was very close to leveling, showing similar read-path behavior at large scale

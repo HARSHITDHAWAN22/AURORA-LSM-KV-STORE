@@ -1,0 +1,25 @@
+Strategy: Leveling
+Workload: Read-heavy
+Total Ops: 10000
+
+Execution Time: 3.72634 sec
+Overall Throughput: 2683.60 ops/sec
+
+PUT Throughput: 2141.88 ops/sec
+GET Throughput: 412.55 ops/sec
+DELETE Throughput: Approx. 129.17 ops/sec
+
+Cache Hit Rate: 99.87%
+Bloom Checks: 0
+Bloom Negatives: 0
+Bloom False Positives: 0
+
+Flushes: Minimal
+Compactions: Minimal
+
+Observations:
+- Leveling completed the read-heavy 10K workload successfully
+- Cache hit rate was extremely high, indicating most reads were served from memory/cache
+- Bloom filter was not exercised, suggesting SSTable traversal was minimal at this scale
+- Read path was dominated by cache rather than disk-level structures
+- This workload primarily reflects in-memory read performance rather than deep LSM read behavior
