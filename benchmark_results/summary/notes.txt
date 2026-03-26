@@ -1,13 +1,77 @@
-Leveling - Mixed - 50000 ops
-- Throughput: 5092.49 ops/sec
-- PUT Throughput: 2544.74 ops/sec
-- GET Throughput: 2295.85 ops/sec
-- Cache Hit Rate: 83.81%
-- Bloom Checks: 507060
-- Bloom Negatives: 503416
+AuroraKV Benchmark Notes
+
+========================================
+FINAL LEVELING vs TIERING COMPARISON
+========================================
+
+Workload: Mixed
+
+----------------------------------------
+10K Operations
+----------------------------------------
+Leveling:
+- Throughput: 5827.66 ops/sec
+- PUT Throughput: 2908.99
+- GET Throughput: 2628.81
+- Cache Hit Rate: 99.84%
 - Bloom False Positives: 0
 
-Key Insight:
-- AuroraKV remained stable under larger workload after fixing read-path thread explosion.
-- Bloom filters provided major read-path savings.
-- Cache effectiveness remained strong but declined under larger working set, as expected.
+Tiering:
+- Throughput: 1243.14 ops/sec
+- PUT Throughput: 629.22
+- GET Throughput: 553.64
+- Cache Hit Rate: 99.93%
+- Bloom False Positives: 0
+
+Observation:
+- Leveling performed much better at small scale.
+
+----------------------------------------
+50K Operations
+----------------------------------------
+Leveling:
+- Throughput: 5092.49 ops/sec
+- PUT Throughput: 2544.74
+- GET Throughput: 2295.85
+- Cache Hit Rate: 83.81%
+- Bloom False Positives: 0
+
+Tiering:
+- Throughput: 5553.94 ops/sec
+- PUT Throughput: 2769.74
+- GET Throughput: 2498.50
+- Cache Hit Rate: 84.08%
+- Bloom False Positives: 4
+
+Observation:
+- Tiering began outperforming leveling at medium scale.
+
+----------------------------------------
+100K Operations
+----------------------------------------
+Leveling:
+- Throughput: 1188.97 ops/sec
+- PUT Throughput: 594.55
+- GET Throughput: 535.79
+- Cache Hit Rate: 62.00%
+- Bloom False Positives: 22
+
+Tiering:
+- Throughput: 3794.23 ops/sec
+- PUT Throughput: 1883.16
+- GET Throughput: 1719.18
+- Cache Hit Rate: 61.88%
+- Bloom False Positives: 10
+
+Observation:
+- Tiering scaled significantly better than leveling at large workloads.
+
+========================================
+FINAL CONCLUSION
+========================================
+
+- Leveling performs better at smaller scale
+- Tiering scales better as workload increases
+- Bloom filters significantly reduce unnecessary SSTable reads
+- Cache hit rate decreases with larger working sets, as expected
+- AuroraKV shows realistic LSM-tree performance tradeoffs

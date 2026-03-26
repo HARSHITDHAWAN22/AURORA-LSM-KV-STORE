@@ -48,7 +48,7 @@ int main() {
     std::cout << "[3] Workload generated: " << ops.size() << " ops\n";
 
     std::cout << "[4] Initializing KVStore...\n";
-    KVStore db("config/system_config.json", "leveling");
+    KVStore db("config/system_config.json", "tiering");
     std::cout << "[5] KVStore initialized successfully.\n";
 
     std::cout << "[6] Running benchmark...\n";

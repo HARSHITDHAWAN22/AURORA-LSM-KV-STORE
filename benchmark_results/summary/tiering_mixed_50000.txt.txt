@@ -1,0 +1,25 @@
+Strategy: Tiering
+Workload: Mixed
+Total Ops: 50000
+
+Execution Time: 9.00262 sec
+Overall Throughput: 5553.94 ops/sec
+
+PUT Throughput: 2769.74 ops/sec
+GET Throughput: 2498.50 ops/sec
+DELETE Throughput: Approx. 285.70 ops/sec
+
+Cache Hit Rate: 84.08%
+Bloom Checks: 488390
+Bloom Negatives: 484811
+Bloom False Positives: 4
+
+Flushes: Likely occurred multiple times
+Compactions: Likely occurred
+
+Observations:
+- Tiering remained stable at 50,000 mixed operations
+- Overall throughput was slightly higher than leveling at the same scale
+- Cache hit rate remained strong under larger working set pressure
+- Bloom filter prevented a large number of unnecessary SSTable reads
+- Very low bloom false positive count indicates effective filter behavior

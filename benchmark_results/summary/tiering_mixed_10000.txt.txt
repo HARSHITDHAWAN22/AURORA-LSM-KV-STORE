@@ -1,0 +1,25 @@
+Strategy: Tiering
+Workload: Mixed
+Total Ops: 10000
+
+Execution Time: 8.04414 sec
+Overall Throughput: 1243.14 ops/sec
+
+PUT Throughput: 629.215 ops/sec
+GET Throughput: 553.639 ops/sec
+DELETE Throughput: Approx. 60 ops/sec
+
+Cache Hit Rate: 99.93%
+Bloom Checks: 43
+Bloom Negatives: 41
+Bloom False Positives: 0
+
+Flushes: Likely occurred
+Compactions: Likely occurred
+
+Observations:
+- Tiering completed 10,000 mixed operations successfully
+- Cache hit rate was extremely high, indicating strong repeated key reuse
+- Bloom filter activity was low in this run, suggesting limited SSTable lookup depth
+- Overall throughput was significantly lower than the leveling 10K run
+- This suggests the current tiering implementation may be introducing additional overhead

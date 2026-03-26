@@ -1,0 +1,25 @@
+Strategy: Tiering
+Workload: Mixed
+Total Ops: 100000
+
+Execution Time: 26.3558 sec
+Overall Throughput: 3794.23 ops/sec
+
+PUT Throughput: 1883.16 ops/sec
+GET Throughput: 1719.18 ops/sec
+DELETE Throughput: Approx. 191.89 ops/sec
+
+Cache Hit Rate: 61.88%
+Bloom Checks: 4902852
+Bloom Negatives: 4885595
+Bloom False Positives: 10
+
+Flushes: Frequent
+Compactions: Frequent
+
+Observations:
+- Tiering remained stable at 100,000 mixed operations
+- Throughput was significantly higher than leveling at the same scale
+- Cache hit rate decreased under larger working set pressure, as expected
+- Bloom filter handled millions of checks with extremely low false positives
+- Tiering scaled much better than leveling for large mixed workloads
