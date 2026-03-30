@@ -40,7 +40,7 @@ void WAL::logPut(const std::string& key, const std::string& value) {
 
     if (buffer.size() >= batchSize * 64) {
         LOG_DEBUG("WAL batch threshold reached, flushing");
-        flushUnlocked();   // ✅ FIXED
+        flushUnlocked();
     }
 }
 
@@ -55,7 +55,7 @@ void WAL::logDelete(const std::string& key) {
 
     if (buffer.size() >= batchSize * 64) {
         LOG_DEBUG("WAL batch threshold reached, flushing");
-        flushUnlocked();   // ✅ FIXED
+        flushUnlocked();   // FIXED
     }
 }
 

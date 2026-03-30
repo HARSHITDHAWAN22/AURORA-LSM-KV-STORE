@@ -1,0 +1,213 @@
+# Benchmark Results
+
+This file contains the benchmark observations for AuroraKV under different workloads and compaction strategies.
+
+The purpose of these tests was to check how the system behaves as the workload and dataset size increase, and how **leveling** and **tiering** compare in practice.
+
+---
+
+## 1. Benchmark Setup
+
+### Workloads Tested
+
+- Mixed workload
+- Write-heavy workload
+- Read-heavy workload
+
+### Operation Scale
+
+- 10,000 operations
+- 50,000 operations
+- 100,000 operations
+
+### Metrics Observed
+
+- Overall throughput
+- PUT throughput
+- GET throughput
+- Cache hit rate
+- Bloom filter checks
+- Bloom filter negatives
+- Bloom filter false positives
+
+---
+
+## 2. Test Configuration
+
+Example benchmark configuration:
+
+```cpp
+config.total_ops = 100000;
+config.workload = WorkloadType::WRITE_HEAVY;
+
+config.put_ratio = 0.8;
+config.get_ratio = 0.15;
+config.delete_ratio = 0.05;
+
+KVStore db("config/system_config.json", "tiering");
+```
+
+Each workload was tested with both:
+
+- **Leveling**
+- **Tiering**
+
+---
+
+## 3. Write-Heavy Workload
+
+### What was observed
+
+- Tiering performed better at small and large scales
+- Leveling performed better at medium scale
+- Throughput did not scale in a perfectly linear way
+
+### What this means
+
+Tiering usually helps writes because it reduces the amount of rewriting during compaction.
+
+Leveling, on the other hand, does more aggressive merging, which can slow down writes but sometimes gives better intermediate performance depending on compaction timing and file layout.
+
+---
+
+## 4. Read-Heavy Workload
+
+### What was observed
+
+- At smaller scale, performance was mostly influenced by cache
+- At larger scale, Bloom Filters became more important
+- Leveling and tiering gave similar performance at higher scale
+
+### What this means
+
+At smaller workloads, a large part of the data stays hot, so cache hides much of the disk cost.
+
+As the dataset grows, more reads depend on SSTables, and Bloom Filters become more useful in avoiding unnecessary file checks.
+
+---
+
+## 5. Mixed Workload
+
+### What was observed
+
+- Performance changed depending on the balance between reads and writes
+- Tiering handled write pressure better
+- Leveling gave more stable read behavior
+
+### What this means
+
+Mixed workloads make the trade-off between read optimization and write optimization more visible.
+
+There was no single strategy that stayed best in every case.
+
+---
+
+## 6. Cache Behavior
+
+### What was observed
+
+- Cache hit rate was higher at small scale
+- Cache hit rate dropped as the number of operations increased
+
+### What this means
+
+As the working set grows, fewer repeated accesses fit into cache.
+
+This causes more reads to go through the MemTable and SSTables.
+
+---
+
+## 7. Bloom Filter Behavior
+
+### What was observed
+
+- Bloom Filter usage increased as scale increased
+- A large number of negative checks helped avoid unnecessary SSTable reads
+
+### What this means
+
+Bloom Filters become more useful when the number of SSTables grows.
+
+They help keep the read path efficient, especially when many keys do not exist in most files.
+
+---
+
+## 8. Compaction Impact
+
+### What was observed
+
+- Leveling caused more frequent compactions
+- Tiering reduced compaction frequency
+- Compaction cost became more visible as scale increased
+
+### What this means
+
+This matches the expected behavior of both strategies:
+
+- **Leveling** improves read layout but costs more writes
+- **Tiering** reduces write cost but leaves more overlap during reads
+
+---
+
+## 9. Scalability Trends
+
+As the dataset size increased:
+
+- Cache hit rate dropped
+- Bloom Filter checks increased
+- More reads depended on SSTables
+- Compaction overhead became more noticeable
+
+This shows that the internal structures become more important as the system moves beyond small-scale behavior.
+
+---
+
+## 10. Overall Comparison
+
+| Workload Type | Better Strategy | Reason |
+|--------------|----------------|--------|
+| Write-heavy  | Tiering        | Lower write amplification |
+| Read-heavy   | Leveling       | Better read organization |
+| Mixed        | Depends        | Trade-off between read and write cost |
+
+---
+
+## 11. Main Observations
+
+- There is no single best compaction strategy for every workload
+- Tiering is generally better for write-heavy usage
+- Leveling is generally better for read-heavy usage
+- Cache and Bloom Filters play a major role in performance
+- System behavior changes noticeably as scale increases
+
+---
+
+## 12. Limitations
+
+A few things should be kept in mind while interpreting these results:
+
+- Tests were run on a single-machine setup
+- Results can vary depending on hardware and disk behavior
+- The workloads are synthetic and do not fully represent all real-world access patterns
+
+---
+
+## 13. Possible Improvements
+
+The benchmark can be improved further by adding:
+
+- latency measurements (p50 / p95 / p99)
+- larger datasets
+- concurrent workloads
+- comparison with existing engines
+- graphs and result visualization
+
+---
+
+## 14. Summary
+
+The benchmark results show the expected trade-offs of an LSM-tree based storage engine.
+
+AuroraKV behaves differently under write-heavy, read-heavy, and mixed workloads, and the choice between **leveling** and **tiering** has a visible impact on performance.
+
+These tests helped validate both the implementation and the design decisions used in the project.
