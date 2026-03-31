@@ -1,0 +1,255 @@
+# Setup and Run
+
+## Requirements
+
+Make sure the following are installed:
+
+- C++17 compatible compiler
+- `g++` / GCC / MinGW
+- Windows or Linux
+- Terminal / Command Prompt / PowerShell
+
+---
+
+## Project Structure
+
+Expected folder structure:
+
+```text
+AuroraKV/
+│
+├── benchmark/
+├── config/
+├── data/
+├── include/
+├── metadata/
+├── src/
+├── benchmark_results/
+│
+├── README.md
+├── ARCHITECTURE.md
+├── DESIGN_DECISIONS.md
+├── BENCHMARK_RESULTS.md
+├── SETUP_AND_RUN.md
+```
+
+---
+
+## Open the Project Folder
+
+Open terminal in the root folder of the project.
+
+Example:
+
+```bash
+cd D:\Aurora-lsm-kv-store
+```
+
+Or:
+
+```bash
+cd AuroraKV
+```
+
+---
+
+## Compile
+
+Use the following command to compile the benchmark runner:
+
+```bash
+g++ -std=c++17 benchmark/benchmark_main.cpp benchmark/Workload.cpp src/KVStore.cpp src/MemTable.cpp src/WAL.cpp src/SSTable.cpp src/SSTableBuilder.cpp src/BloomFilter.cpp src/Compaction.cpp src/ManifestManager.cpp src/LRUCache.cpp src/ConfigManager.cpp src/Logger.cpp src/MergeIterator.cpp src/RangeIterator.cpp src/SSTableIterator.cpp -Iinclude -Ibenchmark -pthread -o benchmark_runner.exe
+```
+
+### Notes
+
+- On **Windows**, the output file will usually be `benchmark_runner.exe`
+- On **Linux**, you can rename the output to `benchmark_runner` if needed
+
+---
+
+## Run
+
+### Windows
+
+```bash
+./benchmark_runner.exe
+```
+
+### Linux
+
+```bash
+./benchmark_runner
+```
+
+---
+
+## Benchmark Configuration
+
+Benchmark behavior can be changed from the workload configuration.
+
+Example:
+
+```cpp
+config.total_ops = 100000;
+config.workload = WorkloadType::WRITE_HEAVY;
+
+config.put_ratio = 0.8;
+config.get_ratio = 0.15;
+config.delete_ratio = 0.05;
+
+KVStore db("config/system_config.json", "tiering");
+```
+
+You can switch the compaction strategy between:
+
+- `"leveling"`
+- `"tiering"`
+
+---
+
+## Workload Types
+
+Examples of workload types used during testing:
+
+- `WRITE_HEAVY`
+- `READ_HEAVY`
+- `MIXED`
+
+These can be changed depending on what you want to test.
+
+---
+
+## Output Folders
+
+During execution, AuroraKV may generate or update files in:
+
+- `data/` → SSTables
+- `metadata/` → WAL, manifest, stats
+- `benchmark_results/` → benchmark outputs
+
+If these folders do not exist, create them before running the program.
+
+---
+
+## Clean Run
+
+If you want to run the benchmark from a fresh state, remove previously generated files before running again.
+
+Folders that may need cleaning:
+
+- `data/`
+- `metadata/`
+- `benchmark_results/`
+
+Do **not** delete source files or config files.
+
+---
+
+## Common Issues
+
+### 1. `g++ is not recognized`
+
+This usually means the compiler is either:
+
+- not installed
+- not added to PATH
+
+### Fix
+
+- Install MinGW / GCC
+- Add `g++` to system PATH
+- Restart the terminal
+
+---
+
+### 2. Missing header file errors
+
+This usually happens because of:
+
+- incorrect folder structure
+- wrong compile location
+- missing include flags
+
+### Fix
+
+Make sure:
+
+- you are in the project root folder
+- the compile command includes:
+
+```bash
+-Iinclude -Ibenchmark
+```
+
+---
+
+### 3. Program runs but no output files are created
+
+Possible reasons:
+
+- required folders do not exist
+- file paths in config are incorrect
+- write permissions are missing
+
+### Check
+
+- `data/`
+- `metadata/`
+- `benchmark_results/`
+
+---
+
+### 4. Old files affecting new results
+
+Previous SSTables, WAL files, or benchmark outputs may affect later runs.
+
+### Fix
+
+Delete old generated files before running benchmarks again.
+
+---
+
+## Recommended Run Order
+
+A simple way to test AuroraKV:
+
+1. Compile the project  
+2. Run a small workload first  
+3. Check if SSTables and WAL files are generated  
+4. Run larger workloads  
+5. Compare leveling and tiering  
+6. Save benchmark outputs  
+
+---
+
+## Example Test Plan
+
+A simple test plan can include:
+
+- 10K operations + leveling
+- 10K operations + tiering
+- 50K operations + leveling
+- 50K operations + tiering
+- 100K operations + leveling
+- 100K operations + tiering
+
+Repeat these for:
+
+- write-heavy
+- read-heavy
+- mixed workloads
+
+---
+
+## Final Note
+
+AuroraKV can be built and tested using a standard C++17 toolchain.
+
+The project is structured so that core storage engine behavior can be tested locally, including:
+
+- write buffering
+- WAL-based durability
+- SSTable persistence
+- Bloom Filter assisted reads
+- compaction strategy trade-offs

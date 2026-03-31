@@ -42,7 +42,7 @@ public:
             size_t bloomHashCount);
 
     // =======================
-    // 🔥 COPY CONSTRUCTOR (FIXED ORDER)
+    // COPY CONSTRUCTOR (FIXED ORDER)
     // =======================
     SSTable(const SSTable& other)
         : statsHook(other.statsHook),
@@ -54,7 +54,7 @@ public:
           fileSize(other.fileSize) {}
 
     // =======================
-    // 🔥 ASSIGNMENT OPERATOR
+    // ASSIGNMENT OPERATOR
     // =======================
     SSTable& operator=(const SSTable& other) {
         if (this != &other) {
@@ -100,15 +100,15 @@ private:
     // =======================
     // MEMBER ORDER (IMPORTANT)
     // =======================
-    SSTableStatsHook* statsHook = nullptr;   // 1️⃣ FIRST
+    SSTableStatsHook* statsHook = nullptr;   // 1 FIRST
 
-    std::string filePath;                    // 2️⃣
-    BloomFilter bloom;                      // 3️⃣
-    std::vector<SSTableIndexEntry> sparseIndex; // 4️⃣
+    std::string filePath;                // 2
+    BloomFilter bloom;                     // 3
+    std::vector<SSTableIndexEntry> sparseIndex; // 4
 
-    std::string minKey;                     // 5️⃣
-    std::string maxKey;                     // 6️⃣
-    uint64_t fileSize = 0;                  // 7️⃣ LAST
+    std::string minKey;                     // 5
+    std::string maxKey;                     // 6
+    uint64_t fileSize = 0;                  // 7 LAST
 
     // =======================
     // INTERNALS
